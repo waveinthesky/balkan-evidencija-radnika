@@ -1,62 +1,61 @@
 import {auth,db} from './firebase-shared.js';
 import {onAuthStateChanged,signInAnonymously} from 'https://www.gstatic.com/firebasejs/11.10.0/firebase-auth.js';
-import {collection,doc,getDoc,getDocFromCache,onSnapshot,query,where,setDoc,serverTimestamp} from 'https://www.gstatic.com/firebasejs/11.10.0/firebase-firestore.js';
+import {doc,getDocFromServer,setDoc,serverTimestamp} from 'https://www.gstatic.com/firebasejs/11.10.0/firebase-firestore.js';
+
 const $=id=>document.getElementById(id);
 const esc=s=>String(s??'').replace(/[&<>'"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[c]));
-let station=null,mode='in',badges=new Map(),events=[],unsubscribe=[],connected=false,lastClick=0;
-function feedback(message,style=''){$('status').className='result '+style;$('status').textContent=message}
-function setConnectivity(){connected=navigator.onLine;$('connection').textContent=connected?'Internet dostupan':'Nema interneta – offline';$('connection').style.background=connected?'#e4f8ee':'#fff0db'}
-window.addEventListener('online',setConnectivity);window.addEventListener('offline',setConnectivity);setConnectivity();
-if('serviceWorker' in navigator && ['https:','http:'].some(s=>location.protocol===s))navigator.serviceWorker.register('./sw.js').catch(()=>{});
-function day(stamp){const d=new Date(stamp);return d.toLocaleDateString('bs-BA')}
-function refreshHistory(){let list=events.slice().sort((a,b)=>b.at.localeCompare(a.at)).slice(0,25);$('events').innerHTML=list.map(x=>`<div class="item"><span><b>${esc(badges.get(x.barcode)?.name||'Zaposleni')}</b> · ${x.kind==='in'?'Dolazak':'Odlazak'}</span><span>${day(x.at)} · ${new Date(x.at).toLocaleTimeString('bs-BA',{hour:'2-digit',minute:'2-digit'})}</span></div>`).join('')||'Nema skeniranja.'}
-let profileUnsubscribe=null,currentUid=null,registering=false;
-function pending(msg){feedback(msg,'bad');$('connection').textContent='Upis nije aktivan';}
-function leave(){unsubscribe.forEach(f=>f());unsubscribe=[];station=null;badges=new Map();events=[];}
-function enter(user,locationId){
- if(station===locationId)return;
- leave();station=locationId;
- $('location').textContent='Objekat: '+(station==='m1'?'Market 1':station==='m2'?'Market 2':station);
- unsubscribe.push(onSnapshot(collection(db,'badges'),s=>{badges=new Map(s.docs.map(d=>[d.id,d.data()]));refreshHistory()},e=>feedback('Greška učitavanja kartica: '+e.message,'bad')));
- unsubscribe.push(onSnapshot(query(collection(db,'records','events','items'),where('locId','==',station)),s=>{events=s.docs.map(d=>d.data());refreshHistory();$('connection').textContent=s.metadata.fromCache?'Lokalni podaci – čeka vezu': 'Povezano sa bazom'},e=>feedback('Greška pri čitanju evidencije: '+e.message,'bad')));
- feedback('Povezano s Firebaseom – spremno za skeniranje.', 'ok');$('barcode').focus();
+let mode='in',ready=false,busy=false,lastScan=null,history=[];
+
+function feedback(msg,type=''){const el=$('status');el.textContent=msg;el.className='result '+type}
+function connection(msg,connected=false){$('connection').textContent=msg;$('connection').style.background=connected?'#e4f8ee':'#fff0db'}
+function focus(){setTimeout(()=>$('barcode').focus(),0)}
+function renderHistory(){
+ $('events').innerHTML=history.map(x=>'<div class="item"><span><b>'+esc(x.name)+'</b> · '+(x.kind==='in'?'Dolazak':'Odlazak')+'</span><span>'+esc(x.time)+'</span></div>').join('')||'Nema uspješno potvrđenih prijava na ovom ekranu.';
 }
-function trackDevice(user){
- currentUid=user.uid;
- if(profileUnsubscribe)profileUnsubscribe();leave();
- pending('Provjeravamo mogućnost evidentiranja.');
- profileUnsubscribe=onSnapshot(doc(db,'terminals',user.uid),snap=>{
-   if(!snap.exists()||snap.data().active!==true){leave();pending('Ekran radi, ali upis još nije omogućen. Pripremamo siguran način upisa bez registracije računara.');return;}
-   enter(user,snap.data().locationId);
- },err=>{leave();pending('Firebase nije dopustio upis: '+err.message+'. Prijave se NE čuvaju.');});
+function setMode(v){
+ mode=v;$('modeIn').className='mode'+(v==='in'?' on':'');$('modeOut').className='mode'+(v==='out'?' out':'');focus()
 }
+$('modeIn').addEventListener('click',()=>setMode('in'));
+$('modeOut').addEventListener('click',()=>setMode('out'));
+window.addEventListener('offline',()=>connection('Nema interneta'));
+window.addEventListener('online',()=>connection('Internet dostupan'));
+
 onAuthStateChanged(auth,async user=>{
- if(!user){leave();if(profileUnsubscribe){profileUnsubscribe();profileUnsubscribe=null};pending('Prvi put povezujemo ovaj računar…');
-   if(registering)return;registering=true;
-   try{await signInAnonymously(auth)}catch(e){pending('Anonimna prijava nije uspjela: '+e.message+' — provjeri Firebase Authentication → Anonymous.')}finally{registering=false}
-   return;
+ if(!user){
+  ready=false;connection('Povezivanje s bazom…');
+  try{await signInAnonymously(auth)}
+  catch(e){connection('Nije povezano');feedback('Firebase prijava u pozadini nije uspjela: '+e.message,'bad')}
+  return;
  }
- if(!user.isAnonymous){leave();pending('Administratorska sesija je aktivna, prijava radnika ovdje nije dozvoljena.');return;}
- if(currentUid!==user.uid||!profileUnsubscribe)trackDevice(user);
+ ready=true;connection(navigator.onLine?'Internet dostupan':'Nema interneta',navigator.onLine);
+ feedback('Skeniraj barkod kartice. Prijava će biti potvrđena tek kada je Firebase prihvati.');
+ focus();
 });
-$('modeIn').addEventListener('click',()=>{mode='in';$('modeIn').className='mode on';$('modeOut').className='mode';$('barcode').focus()});
-$('modeOut').addEventListener('click',()=>{mode='out';$('modeOut').className='mode out';$('modeIn').className='mode';$('barcode').focus()});
 $('scanForm').addEventListener('submit',async e=>{
- e.preventDefault();let code=$('barcode').value.trim();$('barcode').value='';$('barcode').focus();
- if(!code)return;if(!station)return feedback('Prijava NIJE sačuvana. Upis još nije aktiviran.','bad');if(Date.now()-lastClick<850)return feedback('Sačekaj prije sljedećeg skeniranja.','bad');lastClick=Date.now();
- const worker=badges.get(code);
- if(!worker?.active)return feedback('Kartica nije pronađena u lokalno učitanom spisku. Ako je nova, prvo poveži internet.','bad');
- const last=events.filter(x=>x.empId===worker.empId).sort((a,b)=>b.at.localeCompare(a.at))[0];
- if(last && Math.abs(Date.now()-Date.parse(last.at))<60_000)return feedback('Ponovljeno skeniranje zaustavljeno (manje od 60 sekundi).','bad');
- if(mode==='in'&&last?.kind==='in')return feedback('Radnik već ima otvorenu prijavu. Administrator treba provjeriti evidenciju.','bad');
- if(mode==='out'&&last?.kind!=='in')return feedback('Nema evidentiranog dolaska. Administrator treba provjeriti evidenciju.','bad');
- const at=new Date().toISOString(),id=crypto.randomUUID();
- const entry={id,empId:worker.empId,locId:station,kind:mode,at,barcode:code,source:'barcode',terminalUid:auth.currentUser.uid,createdAt:serverTimestamp()};
- // Firestore pohranjuje lokalni red čekanja; server kasnije provjerava sigurnosna pravila.
+ e.preventDefault();
+ const code=$('barcode').value.trim();$('barcode').value='';focus();
+ if(!code||busy)return;
+ if(!ready)return feedback('Veza s Firebaseom nije spremna. Skeniranje NIJE evidentirano.','bad');
+ if(!navigator.onLine)return feedback('Nema interneta. Prijava NIJE evidentirana.','bad');
+ if(lastScan?.code===code&&lastScan?.kind===mode&&Date.now()-lastScan.at<60_000)
+  return feedback('Ponovljeno skeniranje u kratkom roku je zaustavljeno.','bad');
+ busy=true;$('barcode').disabled=true;feedback('Provjeravamo karticu i šaljemo evidenciju…');
  try{
-  const promise=setDoc(doc(db,'records','events','items',id),entry);
-  promise.then(()=>feedback('Potvrđeno u zajedničkoj bazi: '+worker.name+' · '+modeLabel())).catch(err=>feedback('SERVER ODBIO PRIJAVU: '+err.message+' (provjeri s administratorom)','bad'));
-  feedback((navigator.onLine?'Zabilježeno – čeka potvrdu servera: ':'Sačuvano lokalno – čeka internet: ')+worker.name+' · '+modeLabel(),'ok');
- }catch(err){feedback('Greška lokalnog spremanja: '+err.message,'bad')}
+  // Čitamo samo karticu koja je fizički skenirana, nikada spisak zaposlenih.
+  const snap=await getDocFromServer(doc(db,'badges',code));
+  if(!snap.exists()||snap.data().active!==true)throw Error('Kartica nije pronađena ili nije aktivna.');
+  const worker=snap.data();
+  if(!worker.empId||!worker.locationId)throw Error('Za zaposlenog nije podešen objekat. Administrator treba provjeriti karticu.');
+  const date=new Date(),id=crypto.randomUUID();
+  const entry={id,empId:worker.empId,locId:worker.locationId,kind:mode,
+    at:date.toISOString(),barcode:code,source:'barcode',createdAt:serverTimestamp()};
+  await setDoc(doc(db,'records','events','items',id),entry);
+  lastScan={code,kind:mode,at:Date.now()};
+  history.unshift({name:worker.name||'Zaposleni',kind:mode,time:date.toLocaleString('bs-BA')});
+  history=history.slice(0,20);renderHistory();
+  $('location').textContent='Objekat: '+(worker.locationId==='m1'?'Market 1':worker.locationId==='m2'?'Market 2':worker.locationId);
+  feedback('Potvrđeno u Firebase bazi: '+(worker.name||'Zaposleni')+' · '+(mode==='in'?'DOLAZAK':'ODLAZAK'),'ok');
+ }catch(err){
+  feedback('Prijava NIJE evidentirana: '+(err?.code==='permission-denied'?'Firestore sigurnosna pravila još ne dozvoljavaju skeniranje bez registracije računara.':err.message),'bad');
+ }finally{busy=false;$('barcode').disabled=false;focus()}
 });
-function modeLabel(){return mode==='in'?'DOLAZAK':'ODLAZAK'}
