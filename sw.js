@@ -1,4 +1,4 @@
-const VERSION='balkan-firebase-v7-test-1';
+const VERSION='balkan-firebase-v8-home-screen';
 const FILES=['./','./index.html','./admin.html','./firebase-config.js','./firebase-shared.js','./kiosk.js','./admin-firebase.js','./manifest.webmanifest'];
 self.addEventListener('install',e=>{e.waitUntil(caches.open(VERSION).then(c=>c.addAll(FILES)).then(()=>self.skipWaiting()))});
 self.addEventListener('activate',e=>e.waitUntil(caches.keys().then(keys=>Promise.all(keys.filter(k=>k.startsWith('balkan-')&&k!==VERSION).map(k=>caches.delete(k)))).then(()=>self.clients.claim())));
