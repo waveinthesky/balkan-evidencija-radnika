@@ -47,3 +47,4 @@ jobs:
           node tests/smoke.mjs
           TEST_MOBILE=1 node tests/smoke.mjs
           node tests/firebase-mock-browser.mjs
+          node tests/calculations.mjs
