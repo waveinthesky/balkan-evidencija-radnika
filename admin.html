@@ -17,6 +17,28 @@
 
 /* V3 leave management */
 .tab{white-space:nowrap}.nav{overflow-x:auto;flex-wrap:wrap}.modal{max-width:min(860px,96vw);max-height:92vh;overflow-y:auto}.modal textarea{width:100%;white-space:pre-wrap}.actionline{flex-wrap:wrap}
+
+/* BALKAN: cijeli mjesec staje u širinu, detalji su ispod tabele. */
+.balkan-month-grid{width:100%;max-width:100%;overflow:hidden}
+.balkan-month-grid .calendar{table-layout:fixed;width:100%;min-width:0;white-space:normal}
+.balkan-month-grid .calendar th,.balkan-month-grid .calendar td{min-width:0!important;padding:2px 0!important;overflow:hidden;font-size:clamp(7px,.68vw,11px)}
+.balkan-month-grid .calendar .name{position:static;min-width:0!important;width:15%;max-width:185px;text-align:left;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;padding:4px!important;font-size:clamp(9px,.85vw,12px)}
+.balkan-month-grid .calendar .total{width:35px;font-size:10px}
+.balkan-month-grid .calendar button.cell{display:block;margin:0 auto;width:calc(100% - 2px);max-width:30px;height:28px;font-size:clamp(7px,.66vw,10px);padding:0;line-height:1}
+.balkan-month-grid .calendar .weekday-tiny{font-size:8px;font-weight:400}
+.balkan-month-grid .cell.VH{background:#b7e0d0;color:#0b6951;outline:1px solid #55a790}
+.balkan-month-grid .cell.selected{outline:2px solid #132b53;outline-offset:0}
+.balkan-month-detail{margin-top:14px}
+.balkan-hrs-table{font-size:12px}
+.balkan-hrs-table th,.balkan-hrs-table td{white-space:nowrap;padding:9px 12px}
+@media(max-width:650px){
+ .balkan-month-grid .calendar .name{width:77px;font-size:8px;padding:2px!important}
+ .balkan-month-grid .calendar .total{width:19px;font-size:8px}
+ .balkan-month-grid .calendar th,.balkan-month-grid .calendar td{font-size:7px;letter-spacing:-.5px}
+ .balkan-month-grid .calendar .weekday-tiny{display:none}
+ .balkan-month-grid .calendar button.cell{border-radius:1px;height:24px;font-size:7px;width:100%}
+ .balkan-month-grid .calendar th.name,.balkan-month-grid .calendar td.name{min-width:77px!important}
+}
 </style>
 </head>
 <body><div id="v6Login" style="position:fixed;inset:0;background:#f2f6fb;z-index:9999;display:grid;place-items:center;font-family:Arial,sans-serif;padding:20px"><div style="background:white;border:1px solid #d9e2ef;border-radius:17px;padding:30px;width:100%;max-width:410px;box-shadow:0 12px 48px #14283F12"><h1 style="font-size:24px">BALKAN – Administracija</h1><p id="v6AuthMessage">Povezivanje sa Firebaseom…</p><form id="v6LoginForm" style="display:none"><label>E-mail administratora<input id="v6Email" type="email" required autocomplete="username" style="display:block;width:100%;padding:11px;margin:7px 0 14px"></label><label>Lozinka<input id="v6Password" type="password" autocomplete="current-password" required style="display:block;width:100%;padding:11px;margin:7px 0 14px"></label><button style="width:100%;padding:13px;background:#2b68db;color:white;border:0;border-radius:9px" type="submit">Prijavi se</button></form><p style="font-size:12px;color:#62738e">Samo administratorski Firebase nalog može mijenjati evidenciju.</p></div></div><div id="app"></div><div id="modal"></div>
@@ -24,7 +46,7 @@
 
 'use strict';
 const APP='BALKAN', MONTHS=['Januar','Februar','Mart','April','Maj','Juni','Juli','August','Septembar','Oktobar','Novembar','Decembar'],WEEK=['Ned','Pon','Uto','Sri','Čet','Pet','Sub'];
-const LEGEND={P:['P','Prijava evidentirana'],N:['N','Nema prijave'],GO:['GO','Godišnji odmor'],BO:['BO','Bolovanje'],ND:['ND','Neradni dan'],RP:['!','Za provjeru / nedostaje odjava'],H:['PR','Praznik'],F:['–','Još nije nastupio']};
+const LEGEND={P:['P','Prijava evidentirana / ručni unos'],N:['N','Nema prijave / provjera'],GO:['GO','Godišnji odmor'],BO:['BO','Bolovanje'],ND:['ND','Neradni dan'],RP:['!','Za provjeru / nedostaje odjava'],H:['PR','Praznik'],VH:['V','Vjerski praznik – plaćeno odsustvo'],F:['–','Još nije nastupio']};
 const $=(id)=>document.getElementById(id);const esc=(s)=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));const uid=()=>globalThis.crypto?.randomUUID?.()||('id_'+Date.now()+'_'+Math.random().toString(36).slice(2));
 const pad=n=>String(n).padStart(2,'0');function today(){let x=new Date();return `${x.getFullYear()}-${pad(x.getMonth()+1)}-${pad(x.getDate())}`}
 function localDate(s){return new Date(s+'T12:00:00')}function wd(s){return localDate(s).getDay()}function ymd(y,m,d){return `${y}-${pad(m)}-${pad(d)}`};function dateTimeDisplay(x){if(!x)return '—';let d=new Date(x);return Number.isNaN(+d)?'—':d.toLocaleString('bs-BA',{day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit'})}function clock(x){if(!x)return '—';let d=new Date(x);return Number.isNaN(+d)?'—':`${pad(d.getHours())}:${pad(d.getMinutes())}`}
@@ -51,10 +73,10 @@ function evs(empId,locId,date){return S.events.filter(v=>v.empId===empId&&v.locI
 function allEvents(empId){return S.events.filter(v=>v.empId===empId).sort((a,b)=>a.at.localeCompare(b.at))}
 function eventsDay(empId,locId,date){let starts=evs(empId,locId,date).filter(e=>e.kind==='in'), full=allEvents(empId), outputs=[];let worked=0,open=false;for(let item of starts){let nextIn=full.find(x=>x.kind==='in'&&x.at>item.at),end=full.find(x=>x.kind==='out'&&x.locId===locId&&x.at>item.at&&(!nextIn||x.at<nextIn.at)&&minutesBetween(item.at,x.at)<=30*60);if(end){worked+=minutesBetween(item.at,end.at);outputs.push([item,end])}else{open=true;outputs.push([item,null])}}return{starts,outputs,worked:Math.round(worked),open}}
 function override(empId,date,locId){return S.overrides.find(v=>v.empId===empId&&v.date===date&&v.locId===locId)}
-function dayStatus(e,date,locId){if(!employeeAt(e,date))return 'F';let o=override(e.id,date,locId);if(o)return o.status;let z=eventsDay(e.id,locId,date);if(z.starts.length)return z.open&&date<today()?'RP':'P';if(holiday(locId,date))return 'H';if(!isWorking(locId,date))return 'ND';if(date>=today())return 'F';return 'N'}
+function dayStatus(e,date,locId){if(!employeeAt(e,date))return 'F';let o=override(e.id,date,locId);if(o)return o.status;let z=eventsDay(e.id,locId,date);if(z.starts.length)return z.open&&date<today()?'RP':'P';let praznik=holiday(locId,date,e);if(praznik)return praznik.type==='religious'?'VH':'H';if(!isWorking(locId,date))return 'ND';if(date>=today())return 'F';return 'N'}
 function employeeNames(locId,date){return S.employees.filter(e=>employeeAt(e,date)&&assigned(e,date)===locId)}
 function monthEmployees(locId,y,m){let pref=ymd(y,m,1),last=ymd(y,m,new Date(y,m,0).getDate());return S.employees.filter(e=>{let from=e.hiredAt||'1900-01-01',to=e.terminatedAt||'9999-12-31';if(from>last||to<pref)return false;for(let day=1;day<=new Date(y,m,0).getDate();day++){let d=ymd(y,m,day);if(employeeAt(e,d)&&assigned(e,d)===locId)return true}return S.events.some(v=>v.empId===e.id&&v.locId===locId&&dateOfEvent(v.at).slice(0,7)===pref.slice(0,7))}).sort((a,b)=>a.name.localeCompare(b.name,'bs'))}
-function monthMetrics(e,locId,y,m){let v={P:0,N:0,GO:0,BO:0,ND:0,RP:0,H:0,F:0,minutes:0};for(let i=1;i<=new Date(y,m,0).getDate();i++){let date=ymd(y,m,i);if(!employeeAt(e,date)||assigned(e,date)!==locId)continue;let s=dayStatus(e,date,locId);v[s]++;v.minutes+=eventsDay(e.id,locId,date).worked}return v}
+function monthMetrics(e,locId,y,m){let v={P:0,N:0,GO:0,BO:0,ND:0,RP:0,H:0,VH:0,F:0,minutes:0};for(let i=1;i<=new Date(y,m,0).getDate();i++){let date=ymd(y,m,i);if(!employeeAt(e,date)||assigned(e,date)!==locId)continue;let s=dayStatus(e,date,locId);v[s]++;v.minutes+=eventsDay(e.id,locId,date).worked}return v}
 function selections(locId){return S.locations.map(l=>`<option value="${esc(l.id)}" ${locId===l.id?'selected':''}>${esc(l.name)}</option>`).join('')}
 function nav(){return `<div class="nav">${[['pregled','▦ Pregled'],['kalendar','▦ Kalendar'],['radnici','♙ Radnici'],['objekti','▣ Objekti'],['odsustva','▤ Praznici i odsustva'],['izvjestaji','▥ Izvještaji'],['istorija','◷ Istorija'],['arhiva','▦ Arhiva 2025'],['postavke','⚙ Postavke']].map(([r,t])=>`<button class="tab ${route===r?'on':''}" data-route="${r}">${t}</button>`).join('')}</div>`}
 function header(){return `<header class="top"><div class="brand"><div class="brand-mark">B</div><div><div class="brand-name">BALKAN <span class="desktop-only">– Evidencija zaposlenih</span></div><div class="subtitle">${unlocked&&route!=='kiosk'?'Administratorski pregled':'Prijava i odjava radnika'}</div></div></div><div class="top-actions"><span class="pill warning desktop-only">● Firebase – provjera veze</span>${unlocked?`<button class="btn small" data-route="pregled">Administracija</button><button class="btn small" data-route="kiosk">Skeniranje</button><button class="btn small" data-act="logout">Odjavi admina</button>`:`${S.admin?'<button class="btn small" data-act="login">🔒 Administracija</button>':''}`}</div></header>`}
@@ -100,7 +122,25 @@ function restoreForm(){modal('Vrati sigurnosnu kopiju',`<p class="note">Ovo će 
 function fmtData(form){return Object.fromEntries(new FormData(form).entries())}
 // UI INTERACTIONS
 $('app').addEventListener('click',async e=>{let t=e.target.closest('[data-route],[data-act],[data-day],[data-edit-worker],[data-print-card],[data-worker-history],[data-location-edit],[data-del-event],[data-del-holiday]');if(!t)return;
-if(t.dataset.route){if(t.dataset.route==='kiosk'&&route!=='kiosk'){unlocked=false;sessionStorage.removeItem('balkan_admin')}route=t.dataset.route;toast='';render();return}if(t.dataset.day){chosenDate=t.dataset.day;chosenEmp=t.dataset.emp;let panel=$('dayPanel');let worker=S.employees.find(e=>e.id===chosenEmp);if(panel&&worker){panel.innerHTML=dayPanel(worker,chosenDate,t.dataset.loc)}else if(worker)manualForm(chosenEmp,chosenDate,t.dataset.loc);$('dayPanel')?.scrollIntoView({behavior:'smooth',block:'nearest'});return}
+if(t.dataset.route){if(t.dataset.route==='kiosk'&&route!=='kiosk'){unlocked=false;sessionStorage.removeItem('balkan_admin')}route=t.dataset.route;toast='';render();return}if(t.dataset.day){
+ chosenDate=t.dataset.day;chosenEmp=t.dataset.emp;
+ const worker=S.employees.find(e=>e.id===chosenEmp);
+ if(!worker)return;
+ const location=t.dataset.loc, events=evs(worker.id,location,chosenDate);
+ const previous=dayStatus(worker,chosenDate,location),h=holiday(location,chosenDate,worker);
+ if(!employeeAt(worker,chosenDate)||assigned(worker,chosenDate)!==location){
+  alert('Radnik nema radni odnos/dodjelu na taj datum.');return;
+ }
+ if(events.length||h||['GO','BO','ND','VH','H','RP'].includes(previous)){
+  render();$('dayPanel')?.scrollIntoView({behavior:'smooth',block:'nearest'});return;
+ }
+ let next=previous==='P'?'N':'P';
+ S.overrides=S.overrides.filter(x=>!(x.empId===worker.id&&x.date===chosenDate&&x.locId===location));
+ S.overrides.push({id:uid(),empId:worker.id,locId:location,date:chosenDate,status:next,note:'Brzi klik u kalendaru; bez potvrđenih sati',updatedAt:new Date().toISOString()});
+ audit('Brza izmjena u kalendaru',worker.name+' '+chosenDate+': '+previous+' → '+next);
+ try{await save();render()}catch(err){alert('Promjena nije sačuvana: '+err.message)}
+ $('dayPanel')?.scrollIntoView({behavior:'smooth',block:'nearest'});return
+}
 if(t.dataset.editWorker){workerForm(t.dataset.editWorker);return}if(t.dataset.printCard){modalCard(t.dataset.printCard);return}if(t.dataset.workerHistory){workerDetails(t.dataset.workerHistory);return}if(t.dataset.locationEdit){locationForm(t.dataset.locationEdit);return}
 if(t.dataset.delEvent){if(!confirm('Obrisati ovaj događaj? Izmjena ostaje u administratorskoj istoriji.'))return;let v=S.events.find(x=>x.id===t.dataset.delEvent);S.events=S.events.filter(x=>x.id!==t.dataset.delEvent);audit('Uklonjeno skeniranje',`${v?.empId} ${v?.kind} ${v?.at}`);await save();render();return}
 if(t.dataset.delHoliday){if(!confirm('Ukloniti praznik?'))return;let h=S.holidays.find(x=>x.id===t.dataset.delHoliday);S.holidays=S.holidays.filter(x=>x.id!==t.dataset.delHoliday);audit('Uklonjen praznik',h?.label);await save();render();return}
