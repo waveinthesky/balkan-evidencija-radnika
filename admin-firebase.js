@@ -14,7 +14,12 @@ let started=false,cloudReady=false,unsubs=[],pending=0,syncError='',cached=false
 function status(){return `<div class="sync-banner ${syncError?'bad':'good'}">${syncError?'⚠ Firebase: '+text(syncError):pending?'⟳ Firestore čuva '+pending+' promjena':'✓ Firebase povezan'} · podaci se automatski usklađuju. Za offline stanje provjeri da nema odbijenih zapisa.</div>`}
 function updateBanner(){const el=document.getElementById('v6FirebaseStatus');if(el)el.innerHTML=status()}
 function sanitize(){const s=api.state();if(!s)return;s._sync={url:'',token:'',deviceId:s._sync?.deviceId||crypto.randomUUID(),seeded:true,lastAt:null};s._pending=[];s._security={terminalToken:'',lastPolicies:{},lastIndividual:{}};s.admin={username:'Firebase administrator'};}
-function badge(e){return {empId:e.id,name:e.name,active:e.active===true,barcode:e.barcode||'',updatedAt:new Date().toISOString()}}
+function badge(e){
+ const day=new Date().toLocaleDateString('en-CA');
+ const items=(e.assignments||[]).filter(a=>a.from<=day).sort((a,b)=>b.from.localeCompare(a.from));
+ const locationId=items[0]?.locationId||e.defaultLocationId||'';
+ return {empId:e.id,name:e.name,active:e.active===true,barcode:e.barcode||'',locationId,updatedAt:new Date().toISOString()}
+}
 function submitChanges(before,after){
  if(!cloudReady)return;
  const changes=api.diff(before,after);
@@ -45,7 +50,7 @@ async function showApp(){
   // Ako smo uvezli staru evidenciju, provjeri da sve aktivne kartice imaju indeks za kase.
   const badgeSnap=await getDocs(collection(db,'badges'));
   const known=new Map(badgeSnap.docs.map(d=>[d.id,d.data()]));
-  const needed=(api.state().employees||[]).filter(e=>e.barcode&&(!known.has(e.barcode)||known.get(e.barcode).empId!==e.id||known.get(e.barcode).active!==(e.active===true)));
+  const needed=(api.state().employees||[]).filter(e=>e.barcode&&(!known.has(e.barcode)||known.get(e.barcode).empId!==e.id||(known.get(e.barcode).active!==(e.active===true)||known.get(e.barcode).locationId!==badge(e).locationId)));
   for(let i=0;i<needed.length;i+=250){const b=writeBatch(db);for(const e of needed.slice(i,i+250))b.set(doc(db,'badges',e.barcode),badge(e));await b.commit();}
  }else{
   // U novom projektu automatski pošalji samo početne objekte i šablon.
