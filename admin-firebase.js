@@ -71,7 +71,7 @@ async function showApp(){
     await api.setCloudRows({[c]:[...map.values()]});
    }).catch(e=>{syncError=e.message;updateBanner()});
   },err=>{syncError=err.message;updateBanner()}));}
- await HIST.load(db);
+ try{await HIST.load(db)}catch(err){syncError='Arhiva 2025 nije dostupna: '+err.message;updateBanner();console.warn('Arhiva 2025:',err)}
  login.style.display='none';api.render();
 }
 form.addEventListener('submit',async e=>{e.preventDefault();message.textContent='Prijavljivanje…';try{await signInWithEmailAndPassword(auth,document.getElementById('v6Email').value.trim(),document.getElementById('v6Password').value)}catch(e){message.textContent='Prijava nije uspjela: '+e.message}});
