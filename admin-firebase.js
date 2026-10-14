@@ -2,7 +2,7 @@ import * as HIST from './history-2025.js';
 import {auth,db} from './firebase-shared.js';
 import {ADMIN_UID} from './firebase-config.js';
 import {onAuthStateChanged,signInWithEmailAndPassword,signOut} from 'https://www.gstatic.com/firebasejs/11.10.0/firebase-auth.js';
-import {collection,doc,getDocs,onSnapshot,setDoc,deleteDoc,writeBatch} from 'https://www.gstatic.com/firebasejs/11.10.0/firebase-firestore.js';
+import {collection,doc,getDocs,getDocsFromServer,onSnapshot,setDoc,deleteDoc,writeBatch} from 'https://www.gstatic.com/firebasejs/11.10.0/firebase-firestore.js';
 const login=document.getElementById('v6Login');
 const message=document.getElementById('v6AuthMessage');
 const form=document.getElementById('v6LoginForm');
@@ -13,12 +13,12 @@ const columns=api.collections();
 const cloudRefs=c=>collection(db,'records',c,'items');
 const cloudDoc=(c,id)=>doc(db,'records',c,'items',id);
 const text=s=>String(s??'').replace(/[&<>'"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[c]));
-let started=false,cloudReady=false,unsubs=[],pending=0,syncError='',cached=false,applying=Promise.resolve();
+let started=false,cloudReady=false,serverVerified=false,unsubs=[],pending=0,syncError='',cached=false,applying=Promise.resolve();
 window.BALKAN_FIREBASE_READY=false;
 function paintCloud(){
  const el=document.querySelector('.top-actions .pill');
  if(!el)return;
- el.textContent=!navigator.onLine?'● Nema interneta':syncError?'● Firebase – provjeri grešku':cloudReady?'● Firebase povezan':'● Firebase – provjera veze';
+ el.textContent=!navigator.onLine?'● Nema interneta':syncError?'● Firebase – provjeri grešku':serverVerified?'● Firebase server potvrđen':'● Firebase – nije potvrđen';
 }
 window.addEventListener('online',paintCloud);window.addEventListener('offline',paintCloud);
 
@@ -38,7 +38,7 @@ function programHelp(){return `
  <details><summary><b>10. Šta još mora proći prije stvarnog obračuna</b></summary><p>Firebase podatke provjeri prijavom iz drugog preglednika. Testiraj dolazak i odlazak s testnom karticom uz provjeru upisa na serveru, pravila pristupa i neuspio pokušaj upisa. Provjeri praznike i norme sati, smjene, datume početka/prestanka rada i izvještaje. Bez uspješnog testa stvarnog Firestore upisa skeniranje ne treba koristiti kao pouzdanu službenu evidenciju.</p></details>
 </section>`;}
 
-function status(){return `<div class="sync-banner ${syncError?'bad':'good'}">${syncError?'⚠ Firebase: '+text(syncError):pending?'⟳ Firestore čuva '+pending+' promjena':'✓ Firebase povezan'} · podaci se automatski usklađuju. Za offline stanje provjeri da nema odbijenih zapisa.</div>`}
+function status(){return `<div class="sync-banner ${syncError?'bad':'good'}">${syncError?'⚠ Firebase: '+text(syncError):pending?'⟳ Firestore čuva '+pending+' promjena':serverVerified?'✓ Firebase server potvrdio čitanje podataka':'⚠ Veza s Firebase serverom nije potvrđena'} · Kod offline rada podaci mogu biti samo u lokalnoj memoriji dok server ne potvrdi promjene.</div>`}
 function updateBanner(){const el=document.getElementById('v6FirebaseStatus');if(el)el.innerHTML=status();paintCloud()}
 function sanitize(){const s=api.state();if(!s)return;s._sync={url:'',token:'',deviceId:s._sync?.deviceId||crypto.randomUUID(),seeded:true,lastAt:null};s._pending=[];s._security={terminalToken:'',lastPolicies:{},lastIndividual:{}};s.admin={username:'Firebase administrator'};}
 function badge(e){
@@ -73,6 +73,9 @@ async function showApp(){
    +programHelp()
    +`<section class="panel"><h2>Firebase – status</h2><div id="v6FirebaseStatus">${status()}</div><button class="btn" id="v6SignOut" type="button">Odjavi Firebase administratora</button><p class="smalltext">Nema vezivanja programa za računar. Skeniranje barkoda treba dodatnu zaštitu na serveru prije upotrebe za stvarnu evidenciju.</p></section>`);
  api.patchSave(submitChanges);
+ // Stvarna serverska provjera: lokalni Firestore cache nije dovoljan dokaz veze.
+ try{await getDocsFromServer(cloudRefs('locations'));serverVerified=true}
+ catch(err){serverVerified=false;syncError='Nije uspjela provjera servera: '+err.message;console.warn('Firestore server check:',err)}
  const fetched={};let any=false;
  for(const c of columns){const snap=await getDocs(cloudRefs(c));fetched[c]=snap.docs.map(d=>d.data());if(fetched[c].length)any=true;}
  if(any){await api.setCloudRows(fetched);
@@ -97,15 +100,15 @@ async function showApp(){
    }).catch(e=>{syncError=e.message;updateBanner()});
   },err=>{syncError=err.message;updateBanner()}));}
  try{await HIST.load(db)}catch(err){syncError='Arhiva 2025 nije dostupna: '+err.message;updateBanner();console.warn('Arhiva 2025:',err)}
- window.BALKAN_FIREBASE_READY=cloudReady;
+ window.BALKAN_FIREBASE_READY=serverVerified;
  login.style.display='none';api.render();paintCloud();
 }
 form.addEventListener('submit',async e=>{e.preventDefault();message.textContent='Prijavljivanje…';try{await signInWithEmailAndPassword(auth,document.getElementById('v6Email').value.trim(),document.getElementById('v6Password').value)}catch(e){message.textContent='Prijava nije uspjela: '+e.message}});
 document.addEventListener('click',e=>{if(e.target.closest?.('[data-act="restore"]')){e.stopImmediatePropagation();e.preventDefault();alert('Vraćanje starih lokalnih podataka u zajedničku bazu se radi isključivo uz prethodni backup i provjeru migracije.');return}if(e.target.id==='v6SignOut'||e.target.closest?.('[data-act="logout"]')){e.stopImmediatePropagation();e.preventDefault();signOut(auth)}},true);
 onAuthStateChanged(auth,async user=>{
- if(!user){unsubs.forEach(f=>f());unsubs=[];started=false;cloudReady=false;window.BALKAN_FIREBASE_READY=false;login.style.display='grid';form.style.display='block';message.textContent='Prijavi se Firebase administratorskim nalogom.';return}
+ if(!user){unsubs.forEach(f=>f());unsubs=[];started=false;cloudReady=false;serverVerified=false;window.BALKAN_FIREBASE_READY=false;login.style.display='grid';form.style.display='block';message.textContent='Prijavi se Firebase administratorskim nalogom.';return}
  if(user.uid!==ADMIN_UID){message.textContent='Ovaj nalog nema administratorska ovlaštenja.';form.style.display='none';await signOut(auth);return}
- if(started)return;started=true;message.textContent='Učitavanje zajedničke evidencije…';try{await showApp()}catch(e){message.textContent='Ne mogu učitati Firestore: '+e.message;started=false;cloudReady=false;syncError=e.message;window.BALKAN_FIREBASE_READY=false;paintCloud();form.style.display='none'}
+ if(started)return;started=true;message.textContent='Učitavanje zajedničke evidencije…';try{await showApp()}catch(e){message.textContent='Ne mogu učitati Firestore: '+e.message;started=false;cloudReady=false;serverVerified=false;syncError=e.message;window.BALKAN_FIREBASE_READY=false;paintCloud();form.style.display='none'}
 });
 
 document.addEventListener('submit',async event=>{
