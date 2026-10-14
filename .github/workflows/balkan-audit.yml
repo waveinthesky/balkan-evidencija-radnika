@@ -1,0 +1,48 @@
+name: BALKAN browser audit
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'admin.html'
+      - 'admin-firebase.js'
+      - 'history-2025.js'
+      - 'kiosk.js'
+      - 'index.html'
+      - 'tests/**'
+      - '.github/workflows/balkan-audit.yml'
+  workflow_dispatch:
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: JavaScript syntax validation
+        run: |
+          node --check --input-type=module < admin-firebase.js
+          node --check --input-type=module < history-2025.js
+          node --check --input-type=module < kiosk.js
+          node --check --input-type=module < firebase-shared.js
+          node --check --input-type=module < firebase-config.js
+          python3 - <<'PY'
+          import re
+          src=open('admin.html').read()
+          scripts=re.findall(r'<script(?:\s[^>]*)?>([\s\S]*?)</script>',src)
+          assert scripts,'Inline script missing'
+          open('/tmp/balkan-inline.js','w').write('\n'.join(scripts))
+          print('Inline scripts:',len(scripts))
+          PY
+          node --check /tmp/balkan-inline.js
+      - name: Install Playwright
+        run: |
+          npm install --no-save playwright@1.56.1
+          npx playwright install --with-deps chromium
+      - name: Browser smoke tests
+        run: |
+          python3 -m http.server 8765 >/tmp/balkan-http.log 2>&1 &
+          sleep 2
+          node tests/smoke.mjs
+          TEST_MOBILE=1 node tests/smoke.mjs
