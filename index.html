@@ -6,6 +6,10 @@
 <main class="main">
 
 <section id="kiosk"><div class="panel"><div class="line"><div><h1>Prijava i odjava radnika</h1><span class="pill" id="location">BALKAN</span></div><span class="pill" id="connection">Povezivanje…</span></div>
-<div class="modes"><button class="mode on" id="modeIn" type="button">↘ DOLAZAK</button><button class="mode" id="modeOut" type="button">↗ ODLAZAK</button></div><form id="scanForm"><label for="barcode">Skeniraj barkod kartice</label><input id="barcode" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="Prinesite karticu čitaču" required><button class="btn" type="submit" style="width:100%;margin-top:12px">Potvrdi skeniranje</button></form><div id="status" class="result">Provjeravamo pristup evidenciji. Prijava važi tek kada je baza potvrdi.</div><p class="mini">Nema prijavljivanja radnika lozinkom. Dok ne omogućimo siguran upis bez registracije računara, prijave nisu aktivne.</p></div>
+<div class="modes"><button class="mode on" id="modeIn" type="button">↘ DOLAZAK</button><button class="mode" id="modeOut" type="button">↗ ODLAZAK</button></div><form id="scanForm"><label for="barcode">Skeniraj barkod kartice</label><input id="barcode" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="Prinesite karticu čitaču" required><button class="btn" type="submit" style="width:100%;margin-top:12px">Potvrdi skeniranje</button></form><div id="status" class="result">Povezivanje s internet bazom…</div><p class="mini">Barkod određuje radnika i njegov objekat. Nema registracije računara. Prijava je uspješna tek kada je Firebase potvrdi.</p></div>
 <div class="panel"><div class="line"><h1>Posljednje prijave ovog objekta</h1><span class="pill">Samo ovaj računar</span></div><div id="events" class="listing">Nema podataka.</div></div></section>
-</main><script type="module" src="./kiosk.js"></script></body></html>
+</main><script>
+/* Reset starih BALKAN service-worker kopija koje prikazuju zastarjeli ekran. */
+if ('serviceWorker' in navigator) navigator.serviceWorker.getRegistrations().then(rs=>Promise.all(rs.filter(r=>r.scope.includes('/balkan-evidencija-radnika/')).map(r=>r.unregister()))).catch(()=>{});
+if ('caches' in window) caches.keys().then(names=>Promise.all(names.filter(n=>n.startsWith('balkan-firebase-')).map(n=>caches.delete(n)))).catch(()=>{});
+</script><script type="module" src="./kiosk.js?v=9.0.0"></script></body></html>
