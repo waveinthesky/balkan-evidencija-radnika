@@ -898,6 +898,108 @@ doExport=function(){
 };
 $('app').addEventListener('click',e=>{if(e.target.closest('[data-act="logout"]'))sessionStorage.removeItem('balkan_admin_api_key')},true);
 
+
+const _baseHoliday=holiday;
+holiday=function(locId,date,employee=null){
+ return (S.holidays||[]).find(h=>(!h.locationId||h.locationId===locId)&&date>=h.date&&date<=(h.endDate||h.date)&&(!h.employeeId||h.employeeId===employee?.id));
+};
+calendar=function(){
+ const n=new Date(calY,calM,0).getDate(),employees=monthEmployees(calLoc,calY,calM);
+ const days=Array.from({length:n},(_,i)=>ymd(calY,calM,i+1));
+ const head=days.map((date,i)=>'<th title="'+date+'">'+(i+1)+'<span class="weekday-tiny">'+WEEK[wd(date)]+'</span></th>').join('');
+ const body=employees.map(e=>{
+  const cells=days.map(date=>{
+   const status=dayStatus(e,date,calLoc);
+   const selected=chosenEmp===e.id&&chosenDate===date?' selected':'';
+   return '<td><button type="button" class="cell '+status+selected+'" title="'+esc(e.name)+' · '+date+' · '+esc(statusText(status))+'" data-day="'+date+'" data-emp="'+esc(e.id)+'" data-loc="'+esc(calLoc)+'">'+esc(LEGEND[status]?.[0]||'–')+'</button></td>';
+  }).join('');
+  const m=monthMetrics(e,calLoc,calY,calM);
+  return '<tr><td class="name" title="'+esc(e.name)+'">'+esc(e.name)+'</td>'+cells+'<td class="total">'+(m.P+m.RP)+'</td></tr>';
+ }).join('');
+ const chosen=S.employees.find(e=>e.id===chosenEmp);
+ return pageTitle('Mjesečni kalendar','Svi dani mjeseca u jednoj tabeli, bez pomjeranja lijevo–desno',
+ '<button class="btn" data-act="exportcsv">↓ Excel (CSV)</button><button class="btn" data-act="print">⎙ Štampaj / PDF</button><button class="btn primary" data-act="manual">+ Ručna evidencija</button>')+
+ '<section class="panel"><div class="toolbar"><div class="field"><label>Objekat</label><select data-field="calLoc">'+selections(calLoc)+'</select></div>'+
+ '<div class="field"><label>Godina</label><input type="number" data-field="calY" min="2000" max="2100" value="'+calY+'"></div>'+
+ '<div class="field"><label>Mjesec</label><select data-field="calM">'+MONTHS.map((m,i)=>'<option value="'+(i+1)+'" '+(calM===i+1?'selected':'')+'>'+m+'</option>').join('')+'</select></div>'+
+ '<button class="btn" data-act="prevmonth">‹ Prethodni</button><button class="btn" data-act="nextmonth">Sljedeći ›</button></div></section>'+
+ '<section class="panel balkan-month-grid"><div class="panel-head"><h2>'+MONTHS[calM-1]+' '+calY+' · '+esc(locName(calLoc))+'</h2><span class="smalltext">'+employees.length+' zaposlenih</span></div>'+
+ '<table class="calendar"><thead><tr><th class="name">Radnik</th>'+head+'<th class="total">Rad.</th></tr></thead><tbody>'+
+ (body||'<tr><td colspan="'+(n+2)+'">Nema zaposlenih za ovaj period.</td></tr>')+
+ '</tbody></table><div class="legend">'+Object.entries(LEGEND).map(([status,entry])=>'<span><b class="'+status+'" style="display:inline-block;min-width:16px">'+entry[0]+'</b>'+esc(entry[1])+'</span>').join('')+'</div>'+
+ '<p class="smalltext">Jedan klik na običan dan mijenja P ↔ N. Detalji su ispod kalendara. Na dane sa skeniranjem, odmorom ili praznikom klik otvara samo detalje, da ne izgubimo postojeće podatke.</p></section>'+
+ '<section class="panel balkan-month-detail" id="dayPanel">'+(chosen?dayPanel(chosen,chosenDate,calLoc):'<h2>Detalji dana</h2><p>Klikni na dan u tabeli za status, dolazak, odlazak i dodatne izmjene.</p>')+'</section>';
+};
+function plannedStart(employee,date){return employee.shiftCalendar?.[date]||employee.shiftStart||''}
+function tardiness(employee,date,locId){
+ const z=eventsDay(employee.id,locId,date),scheduled=plannedStart(employee,date),sc=getSchedule(locId,date);
+ if(!z.starts.length||!scheduled||!sc||!isWorking(locId,date)||holiday(locId,date,employee))return null;
+ return Math.max(0,minutes(clock(z.starts[0].at))-minutes(scheduled)-Number(sc.grace||0));
+}
+function reportFigures(employee,locId,dates){
+ let actual=0,paid=0,late=0,lateDays=0,holidays=0,unclosed=0,unconfigured=0;
+ for(const date of dates){
+  if(!employeeAt(employee,date)||assigned(employee,date)!==locId)continue;
+  const z=eventsDay(employee.id,locId,date),sc=getSchedule(locId,date),status=dayStatus(employee,date,locId);
+  actual+=z.worked;if(z.open)unclosed++;
+  const d=tardiness(employee,date,locId);if(d!=null&&d>0){late+=d;lateDays++}
+  if((status==='H'||status==='VH')&&!z.starts.length&&isWorking(locId,date)&&sc){
+   holidays++;
+   const hours=Number(employee.paidHours||sc.paidHours||0);
+   if(hours>0)paid+=Math.round(hours*60);else unconfigured++;
+  }
+ }
+ return{actual,paid,total:actual+paid,late,lateDays,holidays,unclosed,unconfigured}
+}
+const _baseReport=reports;
+reports=function(){
+ const base=_baseReport(),n=new Date(calY,calM,0).getDate(),dates=Array.from({length:n},(_,i)=>ymd(calY,calM,i+1));
+ const employees=monthEmployees(calLoc,calY,calM);
+ const rows=employees.map(e=>{
+  const r=reportFigures(e,calLoc,dates);
+  return '<tr><td>'+esc(e.name)+'</td><td>'+humanMinutes(r.actual)+'</td><td>'+humanMinutes(r.paid)+'</td><td><b>'+humanMinutes(r.total)+'</b></td><td>'+r.lateDays+' / '+r.late+' min</td><td>'+r.unclosed+(r.unconfigured?' / nenormirano: '+r.unconfigured:'')+'</td></tr>';
+ }).join('');
+ const weeks=new Map();
+ for(const date of dates){
+  const d=localDate(date);d.setDate(d.getDate()-((d.getDay()+6)%7));
+  const key=ymd(d.getFullYear(),d.getMonth()+1,d.getDate());
+  if(!weeks.has(key))weeks.set(key,[]);
+  weeks.get(key).push(date);
+ }
+ const weekRows=[...weeks.values()].flatMap(ds=>employees.map(e=>{
+  const r=reportFigures(e,calLoc,ds);
+  return '<tr><td>'+esc(ds[0].slice(8)+'–'+ds.at(-1).slice(8)+'.'+pad(calM))+'</td><td>'+esc(e.name)+'</td><td>'+humanMinutes(r.actual)+'</td><td>'+humanMinutes(r.paid)+'</td><td>'+humanMinutes(r.total)+'</td><td>'+r.late+' min</td></tr>';
+ })).join('');
+ return base+'<section class="panel"><h2>Radni sati, praznici i kašnjenja · '+MONTHS[calM-1]+' '+calY+'</h2>'+
+ '<p class="smalltext">Stvarni sati su potvrđeni dolasci/odlasci. Plaćeni praznici su odvojeni i računaju se po unesenoj normi sati za jedan radni dan (Objekti).</p>'+
+ '<div class="tablewrap"><table class="simpletable balkan-hrs-table"><thead><tr><th>Radnik</th><th>Stvarno odrađeno</th><th>Plaćeni praznici</th><th>Ukupno obračunski</th><th>Kašnjenja / minuta</th><th>Bez odjave / bez norme</th></tr></thead><tbody>'+
+ (rows||'<tr><td colspan="6">Nema radnika.</td></tr>')+'</tbody></table></div>'+
+ '<p class="smalltext">Kašnjenje računamo samo kad postoji početak smjene za tog radnika; samo radno vrijeme marketa nije dokaz kašnjenja.</p></section>'+
+ '<section class="panel"><h2>Sedmični pregled sati</h2><div class="tablewrap"><table class="simpletable balkan-hrs-table"><thead><tr><th>Period u mjesecu</th><th>Radnik</th><th>Odrađeno</th><th>Pl. praznici</th><th>Obračunski</th><th>Kašnjenje</th></tr></thead><tbody>'+
+ (weekRows||'<tr><td colspan="6">Nema podataka.</td></tr>')+'</tbody></table></div></section>';
+};
+const _baseDayPanel=dayPanel;
+dayPanel=function(employee,date,locId){
+ const d=tardiness(employee,date,locId),start=plannedStart(employee,date),sc=getSchedule(locId,date);
+ const msg=start?(d==null?'Nema potvrđenog kašnjenja za ovaj dan.':d>0?'Kašnjenje: '+d+' min':'U okviru dozvoljenog vremena.'):'Nije unesen početak smjene – kašnjenje se ne može pouzdano izračunati.';
+ return _baseDayPanel(employee,date,locId)+
+ '<div class="note info"><b>Početak smjene:</b> '+esc(start||'nije podešen')+' · <b>Tolerancija:</b> '+(sc?.grace||0)+' min · '+esc(msg)+'</div>'+
+ '<form id="balkanShiftDayForm" class="actionline" style="margin-top:12px"><input type="hidden" name="empId" value="'+esc(employee.id)+'"><input type="hidden" name="date" value="'+esc(date)+'">'+
+ '<label>Početak smjene za ovaj dan: <input type="time" name="start" value="'+esc(employee.shiftCalendar?.[date]||'')+'"></label>'+
+ '<button class="btn" type="submit">Sačuvaj smjenu</button></form>';
+};
+document.getElementById('app').addEventListener('submit',async function(event){
+ if(event.target?.id!=='balkanShiftDayForm')return;
+ event.preventDefault();event.stopImmediatePropagation();
+ const d=Object.fromEntries(new FormData(event.target)),e=S.employees.find(x=>x.id===d.empId);
+ if(!e||!unlocked)return;
+ e.shiftCalendar||={};
+ if(d.start)e.shiftCalendar[d.date]=d.start;else delete e.shiftCalendar[d.date];
+ audit('Početak smjene',e.name+' · '+d.date+' · '+(d.start||'nije određen'));
+ try{await save();render();document.getElementById('dayPanel')?.scrollIntoView({block:'nearest'})}
+ catch(err){alert('Nije sačuvano: '+err.message)}
+},true);
+
 // Firebase bootstrap only: the legacy interface is not activated before authentication.
 window.BALKAN_V6={
  boot:async()=>{await init(); if(!S.admin)S.admin={username:'Firebase administrator'};unlocked=true;route='pregled';S._sync={url:'',token:'',deviceId:S._sync?.deviceId||uid(),seeded:true,lastAt:null};S._pending=[];render()},
