@@ -66,12 +66,28 @@ async function showApp(){
  api.setSyncIndicator(status);
  const oldSettings=api.getSettings();
  // Ne prikazujemo stari privatni Python server, ključeve ili dugmad TOTP koja ne rade na Spark planu.
- api.setSettings(()=>oldSettings()
+
+ function cleanLegacySettings(html){
+  html=html.replace('Lokalna instalacija, sigurnosne kopije i stanica za skeniranje',
+    'Zajednička evidencija u Firebase bazi i uputstvo za rad');
+  const a=html.indexOf('<div class="panel"><h2>Računar za skeniranje</h2>');
+  const b=html.indexOf('<div class="panel"><h2>Čuvanje i vraćanje podataka</h2>',a);
+  if(a>=0&&b>a)html=html.slice(0,a)+html.slice(b);
+  const c=html.indexOf('<div class="panel"><h2>Stara Excel evidencija</h2>');
+  if(c>=0){const d=html.indexOf('</div>',c);if(d>c)html=html.slice(0,c)+html.slice(d+6)}
+  html=html.replace('⚠ Podaci su trenutno samo na ovom računaru i u ovom pregledniku. Nema automatske razmjene između marketa i kancelarije. Ne briši podatke preglednika; redovno pravi sigurnosne kopije. Lozinka u lokalnoj aplikaciji nije zamjena za serversku kontrolu pristupa.',
+   'Firebase je zajednička baza, ali upis mora potvrditi server. Preuzeta JSON kopija sadrži trenutno učitane podatke i služi kao dodatna zaštita, ne kao dokaz da je svaki unos sinhronizovan.');
+  html=html.replace('↓ Preuzmi sigurnosnu kopiju (JSON)','↓ Preuzmi lokalnu kopiju (JSON)');
+  html=html.replace('<button class="btn" data-act="restore">↑ Vrati sigurnosnu kopiju</button>','');
+  return html;
+ }
+ api.setSettings(()=>cleanLegacySettings(oldSettings()
    .replace(/<section class="panel"><h2>Automatske sigurnosne kopije i sinhronizacija<\/h2>[\s\S]*?<\/section>/,'')
-   .replace(/<section class="panel"><h2>Zaštita barkod kartica – Google Authenticator<\/h2>[\s\S]*?<\/section>/,'')
+   .replace(/<section class="panel"><h2>Zaštita barkod kartica – Google Authenticator<\/h2>[\s\S]*?<\/section>/,''))
    +HIST.settings()
    +programHelp()
-   +`<section class="panel"><h2>Firebase – status</h2><div id="v6FirebaseStatus">${status()}</div><button class="btn" id="v6SignOut" type="button">Odjavi Firebase administratora</button><p class="smalltext">Nema vezivanja programa za računar. Skeniranje barkoda treba dodatnu zaštitu na serveru prije upotrebe za stvarnu evidenciju.</p></section>`);
+   +`<section class="panel"><h2>Firebase – status</h2><div id="v6FirebaseStatus">${status()}</div><button class="btn" id="v6SignOut" type="button">Odjavi Firebase administratora</button><p class="smalltext">Nema vezivanja programa za računar. Skeniranje barkoda zahtijeva završnu serversku provjeru prije službene upotrebe.</p></section>`);
+
  api.patchSave(submitChanges);
  // Stvarna serverska provjera: lokalni Firestore cache nije dovoljan dokaz veze.
  try{await getDocsFromServer(cloudRefs('locations'));serverVerified=true}
