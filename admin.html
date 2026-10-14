@@ -125,7 +125,7 @@ const CODE39={"0":"bsbSBsBsb","1":"BsbSbsbsB","2":"bsBSbsbsB","3":"BsBSbsbsb","4
 function makeCode39(code){let q='*'+code+'*',units=[];for(let ch of q){let pat=CODE39[ch];if(!pat)return'';for(let s of pat)units.push({bar:s==='b'||s==='B',w:s===s.toUpperCase()?3:1});units.push({bar:false,w:1})}let px=2,x=10,h=65,rects='';for(let s of units){if(s.bar)rects+=`<rect x="${x}" y="2" width="${s.w*px}" height="${h}" fill="#101820"/>`;x+=s.w*px}return `<svg viewBox="0 0 ${x+10} ${h+4}" xmlns="http://www.w3.org/2000/svg" aria-label="Barkod Code39"><rect width="100%" height="100%" fill="white"/>${rects}</svg>`}
 function workerDetails(id){let e=S.employees.find(x=>x.id===id);if(!e)return;let events=allEvents(id).slice().reverse().slice(0,100);modal('Istorija radnika – '+e.name,`<p class="muted">Barkod: <b>${esc(e.barcode)}</b>. Prikaz posljednjih 100 skeniranja. Mjesečni zbir nalazi se u izvještajima.</p><div class="tablewrap"><table class="simpletable"><thead><tr><th>Datum i vrijeme</th><th>Događaj</th><th>Objekat</th><th>Izvor</th></tr></thead><tbody>${events.map(x=>`<tr><td>${dateTimeDisplay(x.at)}</td><td>${x.kind==='in'?'Dolazak':'Odlazak'}</td><td>${esc(locName(x.locId))}</td><td>${x.source==='manual'?'Ručni unos':'Barkod'}</td></tr>`).join('')||'<tr><td colspan="4">Nema događaja.</td></tr>'}</tbody></table></div>`)}
 function csvCell(x){return '"'+String(x??'').replace(/"/g,'""')+'"'}
-function makeCsv(){let emps=monthEmployees(calLoc,calY,calM),count=new Date(calY,calM,0).getDate(),header=['Radnik','Barkod',...Array.from({length:count},(_,i)=>pad(i+1)), 'Prisutan dana','Bez prijave','Godišnji','Bolovanje','Potvrđeni minuti'];let rows=[header.map(csvCell).join(';')];for(let e of emps){let v=monthMetrics(e,calLoc,calY,calM);rows.push([e.name,e.barcode,...Array.from({length:count},(_,i)=>dayStatus(e,ymd(calY,calM,i+1),calLoc)),v.P+v.RP,v.N,v.GO,v.BO,v.minutes].map(csvCell).join(';'))}return rows.join('\r\n')}
+function makeCsv(){let emps=monthEmployees(calLoc,calY,calM),count=new Date(calY,calM,0).getDate(),header=['Radnik','Barkod',...Array.from({length:count},(_,i)=>pad(i+1)), 'Prisutan dana','Bez prijave','Godišnji','Bolovanje','Potvrđeni minuti','Plaćeni praznični minuti','Sati rada + praznici (min)','Kašnjenje (min)','Dani praznika'];let rows=[header.map(csvCell).join(';')];for(let e of emps){let v=monthMetrics(e,calLoc,calY,calM),r=reportFigures(e,calLoc,Array.from({length:count},(_,i)=>ymd(calY,calM,i+1)));rows.push([e.name,e.barcode,...Array.from({length:count},(_,i)=>dayStatus(e,ymd(calY,calM,i+1),calLoc)),v.P+v.RP,v.N,v.GO,v.BO,v.minutes,r.paid,r.total,r.late,r.holidays].map(csvCell).join(';'))}return rows.join('\r\n')}
 function download(name,content,mime){let blob=new Blob([content],{type:mime}),url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download=name;document.body.append(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),4000)}
 function csvExport(){download(`BALKAN_${calY}-${pad(calM)}_${locName(calLoc).replace(/\W+/g,'_')}.csv`,'\ufeff'+makeCsv(),'text/csv;charset=utf-8')}
 function printCards(){let c=$('employeeCard');if(!c)return;let w=window.open('','_blank','width=500,height=400');if(!w){alert('Dozvoli otvaranje prozora za štampu.');return}w.document.write('<html><head><title>Štampaj karticu</title><style>body{font-family:Arial;text-align:center;padding:35px}.print-card{margin:auto;width:300px;border:1px dashed #aaa;padding:15px}svg{width:100%;height:75px}</style></head><body>'+c.outerHTML+'</body></html>');w.document.close();w.focus();setTimeout(()=>w.print(),250)}
@@ -1015,6 +1015,22 @@ document.getElementById('app').addEventListener('submit',async function(event){
  try{await save();render();document.getElementById('dayPanel')?.scrollIntoView({block:'nearest'})}
  catch(err){alert('Nije sačuvano: '+err.message)}
 },true);
+
+
+const _baseOverview2026=overview;
+overview=function(){
+ const original=_baseOverview2026(),date=today();
+ const messages=employeeNames(adminLoc,date).map(e=>{
+  const delay=tardiness(e,date,adminLoc);
+  if(delay==null||delay<=0)return '';
+  const shift=plannedStart(e,date),first=eventsDay(e.id,adminLoc,date).starts[0];
+  return '<tr><td>'+esc(e.name)+'</td><td>'+esc(shift||'—')+'</td><td>'+esc(first?clock(first.at):'—')+'</td><td><strong>'+delay+' min</strong></td></tr>';
+ }).filter(Boolean);
+ if(!messages.length)return original;
+ return original+'<section class="panel"><h2>Upozorenja – kašnjenja za danas</h2><p class="smalltext">Računa se samo za radnike s podešenim početkom smjene i potvrđenim skeniranjem. Tolerancija objekta je već uračunata.</p>'+
+ '<div class="tablewrap"><table class="simpletable"><thead><tr><th>Radnik</th><th>Početak smjene</th><th>Dolazak</th><th>Kašnjenje</th></tr></thead><tbody>'+
+ messages.join('')+'</tbody></table></div></section>';
+};
 
 // Firebase bootstrap only: the legacy interface is not activated before authentication.
 window.BALKAN_V6={
