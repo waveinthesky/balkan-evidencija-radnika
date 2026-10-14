@@ -62,7 +62,15 @@ async function save(){let snap=structuredClone(S);pendingPersist=pendingPersist.
 async function init(){try{db=await newStore();S=await storeRead()}catch(e){db=null;try{S=JSON.parse(localStorage.getItem('BALKAN_DATABASE')||'null')}catch{S=null}}S||=defaultState();calLoc=S.station||'m1';adminLoc=calLoc;unlocked=!!(S.admin&&unlocked);if(!S.admin)route='setup';render()}
 function audit(action,detail){S.audit.unshift({id:uid(),at:new Date().toISOString(),action,detail,by:'Administrator (lokalno)'});if(S.audit.length>5000)S.audit.length=5000}
 function statusText(code){return LEGEND[code]?.[1]||'Nepoznato'}
-function employeeAt(e,date){return (!e.hiredAt||date>=e.hiredAt)&&(!e.terminatedAt||date<=e.terminatedAt)}
+function employeeAt(e,date){
+ const from=e.hiredAt||'0000-01-01';
+ let until=e.terminatedAt||'9999-12-31';
+ // Privatni uvoz 2025 označava radnike koji u 2026 više nisu zaposleni.
+ // Bez nagađanja tačnog datuma prestanka, za obračun su isključeni od 01.01.2026.
+ if(e.inactiveBy2026===true&&until>='2026-01-01')until='2025-12-31';
+ if(e.notActiveFrom&&until>=e.notActiveFrom)until=e.notActiveFrom;
+ return date>=from&&date<=until;
+}
 function locName(id){return S.locations.find(l=>l.id===id)?.name||'Nepoznat objekat'}
 function getSchedule(locId,date){let loc=S.locations.find(l=>l.id===locId);return loc?.schedules?.filter(x=>x.from<=date).sort((a,b)=>b.from.localeCompare(a.from))[0]||null}
 function isWorking(locId,date){let sc=getSchedule(locId,date);return sc?sc.days.includes(wd(date)):true}
