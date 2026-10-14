@@ -1,3 +1,4 @@
+import * as HIST from './history-2025.js';
 import {auth,db} from './firebase-shared.js';
 import {ADMIN_UID} from './firebase-config.js';
 import {onAuthStateChanged,signInWithEmailAndPassword,signOut} from 'https://www.gstatic.com/firebasejs/11.10.0/firebase-auth.js';
@@ -6,6 +7,8 @@ const login=document.getElementById('v6Login');
 const message=document.getElementById('v6AuthMessage');
 const form=document.getElementById('v6LoginForm');
 const api=window.BALKAN_V6;
+window.BALKAN_ARCHIVE={display:()=>HIST.display()};
+HIST.bindUI();
 const columns=api.collections();
 const cloudRefs=c=>collection(db,'records',c,'items');
 const cloudDoc=(c,id)=>doc(db,'records',c,'items',id);
@@ -29,7 +32,7 @@ function submitChanges(before,after){
    if(a.collection==='employees'){
     const old=(before.employees||[]).find(e=>e.id===a.key);
     if(old?.barcode&&(!a.value||old.barcode!==a.value.barcode))items.push({ref:doc(db,'badges',old.barcode),value:null});
-    if(a.value?.barcode)items.push({ref:doc(db,'badges',a.value.barcode),value:badge(a.value)});
+    if(a.value?.barcode&&a.value.barcodeAssigned!==false&&!a.value.barcode.startsWith('NEPOSTAVLJENO-'))items.push({ref:doc(db,'badges',a.value.barcode),value:badge(a.value)});
    }
  }
  for(let i=0;i<items.length;i+=300){const batch=writeBatch(db);let part=items.slice(i,i+300);for(let x of part)x.value===null?batch.delete(x.ref):batch.set(x.ref,x.value);pending+=part.length;updateBanner();batch.commit().then(()=>{pending-=part.length;syncError='';updateBanner()}).catch(err=>{pending-=part.length;syncError=err.message+' — sačuvaj lokalnu kopiju i provjeri pravila!';updateBanner()});}
@@ -37,12 +40,13 @@ function submitChanges(before,after){
 async function showApp(){
  await api.boot();sanitize();
  api.setSyncIndicator(status);
- const oldSettings=window.BALKAN_V6_SETTINGS_BACKUP || settings;
+ const oldSettings=api.getSettings();
  // Ne prikazujemo stari privatni Python server, ključeve ili dugmad TOTP koja ne rade na Spark planu.
  api.setSettings(()=>oldSettings()
    .replace(/<section class="panel"><h2>Automatske sigurnosne kopije i sinhronizacija<\/h2>[\s\S]*?<\/section>/,'')
    .replace(/<section class="panel"><h2>Zaštita barkod kartica – Google Authenticator<\/h2>[\s\S]*?<\/section>/,'')
-   +`<section class="panel"><h2>Firebase – povezivanje terminala</h2><div id="v6FirebaseStatus">${status()}</div><p class="smalltext">Za market otvori početni ekran index.html na njegovom računaru. Program će napraviti anonimni Firebase identitet i prikazati UID. Ovdje upiši UID i odaberi objekat. Kasirkama nije potrebna lozinka.</p><form id="v6AddTerminal" class="grid"><div class="fields"><div class="field"><label>Firebase UID terminala</label><input name="uid" required pattern="[A-Za-z0-9_-]{15,128}"></div><div class="field"><label>Objekat</label><select name="locationId">${api.state().locations.map(l=>`<option value="${text(l.id)}">${text(l.name)}</option>`).join('')}</select></div></div><button class="btn primary" type="submit">Registruj terminal</button></form><button class="btn" id="v6SignOut" type="button">Odjavi Firebase administratora</button><p class="smalltext">Napomena: Google Authenticator je zasad isključen. V5 TOTP server ne radi unutar GitHub Pages + besplatni Firestore bez posebnog verifikatora.</p></section>`);
+   +HIST.settings()
+   +`<section class="panel"><h2>Firebase – status</h2><div id="v6FirebaseStatus">${status()}</div><button class="btn" id="v6SignOut" type="button">Odjavi Firebase administratora</button><p class="smalltext">Nema vezivanja programa za računar. Skeniranje barkoda treba dodatnu zaštitu na serveru prije upotrebe za stvarnu evidenciju.</p></section>`);
  api.patchSave(submitChanges);
  const fetched={};let any=false;
  for(const c of columns){const snap=await getDocs(cloudRefs(c));fetched[c]=snap.docs.map(d=>d.data());if(fetched[c].length)any=true;}
@@ -50,7 +54,7 @@ async function showApp(){
   // Ako smo uvezli staru evidenciju, provjeri da sve aktivne kartice imaju indeks za kase.
   const badgeSnap=await getDocs(collection(db,'badges'));
   const known=new Map(badgeSnap.docs.map(d=>[d.id,d.data()]));
-  const needed=(api.state().employees||[]).filter(e=>e.barcode&&(!known.has(e.barcode)||known.get(e.barcode).empId!==e.id||(known.get(e.barcode).active!==(e.active===true)||known.get(e.barcode).locationId!==badge(e).locationId)));
+  const needed=(api.state().employees||[]).filter(e=>e.barcode&&e.barcodeAssigned!==false&&!e.barcode.startsWith('NEPOSTAVLJENO-')&&(!known.has(e.barcode)||known.get(e.barcode).empId!==e.id||(known.get(e.barcode).active!==(e.active===true)||known.get(e.barcode).locationId!==badge(e).locationId)));
   for(let i=0;i<needed.length;i+=250){const b=writeBatch(db);for(const e of needed.slice(i,i+250))b.set(doc(db,'badges',e.barcode),badge(e));await b.commit();}
  }else{
   // U novom projektu automatski pošalji samo početne objekte i šablon.
@@ -67,13 +71,27 @@ async function showApp(){
     await api.setCloudRows({[c]:[...map.values()]});
    }).catch(e=>{syncError=e.message;updateBanner()});
   },err=>{syncError=err.message;updateBanner()}));}
+ await HIST.load(db);
  login.style.display='none';api.render();
 }
 form.addEventListener('submit',async e=>{e.preventDefault();message.textContent='Prijavljivanje…';try{await signInWithEmailAndPassword(auth,document.getElementById('v6Email').value.trim(),document.getElementById('v6Password').value)}catch(e){message.textContent='Prijava nije uspjela: '+e.message}});
-document.addEventListener('submit',async e=>{if(e.target.id!=='v6AddTerminal')return;e.preventDefault();e.stopImmediatePropagation();const d=Object.fromEntries(new FormData(e.target));try{await setDoc(doc(db,'terminals',d.uid),{locationId:d.locationId,active:true,registeredAt:new Date().toISOString()});alert('Računar je odobren. Na početnom ekranu može se skenirati kartica bez korisničkog logina.');e.target.reset()}catch(err){alert(err.message)}},true);
 document.addEventListener('click',e=>{if(e.target.closest?.('[data-act="restore"]')){e.stopImmediatePropagation();e.preventDefault();alert('Vraćanje starih lokalnih podataka u zajedničku bazu se radi isključivo uz prethodni backup i provjeru migracije.');return}if(e.target.id==='v6SignOut'||e.target.closest?.('[data-act="logout"]')){e.stopImmediatePropagation();e.preventDefault();signOut(auth)}},true);
 onAuthStateChanged(auth,async user=>{
  if(!user){unsubs.forEach(f=>f());unsubs=[];started=false;cloudReady=false;login.style.display='grid';form.style.display='block';message.textContent='Prijavi se Firebase administratorskim nalogom.';return}
  if(user.uid!==ADMIN_UID){message.textContent='Ovaj nalog nema administratorska ovlaštenja.';form.style.display='none';await signOut(auth);return}
  if(started)return;started=true;message.textContent='Učitavanje zajedničke evidencije…';try{await showApp()}catch(e){message.textContent='Ne mogu učitati Firestore: '+e.message;started=false;form.style.display='none'}
 });
+
+document.addEventListener('submit',async event=>{
+ if(event.target?.id!=='histImport')return;
+ event.preventDefault();event.stopImmediatePropagation();
+ if(!cloudReady||auth.currentUser?.uid!==ADMIN_UID){alert('Prvo se prijavi kao administrator.');return}
+ const uploadForm=event.target;
+ const uploaded=uploadForm.elements.namedItem('file')?.files?.[0];
+ if(!uploaded)return;
+ if(!confirm('Uvesti istoriju 2025. i spisak radnika u privatnu Firebase bazu? Podaci se neće postaviti na GitHub.'))return;
+ try{
+  const n=await HIST.importData(db,api,uploaded);
+  alert('Sačuvano '+n+' zaposlenih. Provjeri tačne datume, barkodove i objekte prije korištenja.');
+ }catch(err){alert('Uvoz nije završen: '+err.message)}
+},true);
