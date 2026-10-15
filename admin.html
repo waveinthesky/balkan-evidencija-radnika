@@ -1130,7 +1130,7 @@ function yearLeaveSummary(e,year){
    if(!employeeAt(e,date)||!loc)continue;
    const status=override(e.id,date,loc)?.status;
    if(status==='IA')confirmedAbsences++;
-   if(status!=='GO'||!isWorking(loc,date)||holiday(loc,date,e))continue;
+   if(status!=='GO'||sickLeaveAt(e,date)||!isWorking(loc,date)||holiday(loc,date,e))continue;
    if(date<=todayValue)used++;else planned++;
   }
  }
@@ -1253,7 +1253,7 @@ document.getElementById('app').addEventListener('click',async event=>{
   employee.hidden=!employee.hidden;audit(employee.hidden?'Sakriven radnik':'Prikazan radnik',employee.name);
   try{await save();render()}catch(error){alert('Nije sačuvano: '+error.message)}return;
  }
- const hasHistory=S.events.some(x=>x.empId===id)||S.overrides.some(x=>x.empId===id)||!!employee.archive2025Key;
+ const hasHistory=S.events.some(x=>x.empId===id)||S.overrides.some(x=>x.empId===id)||(employee.sickLeaves||[]).length>0||!!employee.archive2025Key;
  if(hasHistory){alert('Radnik ima istoriju rada/odsustava ili arhivu 2025. Zbog zaštite podataka ne može se trajno izbrisati. Koristi Sakrij ili deaktiviraj.');return}
  if(!confirm('Trajno obrisati testnog radnika '+employee.name+' bez zapisa? Ovo se ne može poništiti.'))return;
  S.employees=S.employees.filter(e=>e.id!==id);
@@ -1285,6 +1285,7 @@ function latenessDetails(){
     (showAllStaff||(!e.hidden&&!e.isTest&&e.active!==false))&&
     employeeAt(e,date)&&assigned(e,date)===adminLoc);
   for(const e of workers){
+   if(sickLeaveAt(e,date))continue;
    const sc=getSchedule(adminLoc,date),z=eventsDay(e.id,adminLoc,date),o=override(e.id,date,adminLoc);
    const shift=shiftInfo(e,date,adminLoc);
    let kind='unknown',label='',delay=0,first=z.starts[0],record=false;
@@ -1375,6 +1376,134 @@ function balkanNormalize24Time(target){
  if(/^([01][0-9]|2[0-3]):[0-5][0-9]$/.test(v))target.value=v;
 }
 for(const id of ['modal','app'])document.getElementById(id).addEventListener('blur',event=>balkanNormalize24Time(event.target),true);
+
+
+function sickLeaveAt(employee,date){
+ if(!employee||!date)return null;
+ return (employee.sickLeaves||[]).find(period=>
+  period?.from&&date>=period.from&&date<=(period.to||'9999-12-31'))||null;
+}
+const _statusBeforeSickLeave=dayStatus;
+dayStatus=function(employee,date,location){
+ if(employeeAt(employee,date)&&sickLeaveAt(employee,date)&&
+    !evs(employee.id,location,date).some(v=>v.kind==='in'))
+  return 'BO';
+ return _statusBeforeSickLeave(employee,date,location);
+};
+const _attendanceBeforeSickLeave=attendanceSignal;
+attendanceSignal=function(employee,location,date){
+ if(sickLeaveAt(employee,date))return null;
+ return _attendanceBeforeSickLeave(employee,location,date);
+};
+const _empNamesBeforeSickLeave=employeeNames;
+employeeNames=function(location,date){
+ return _empNamesBeforeSickLeave(location,date).filter(e=>!sickLeaveAt(e,date));
+};
+let showSickOnCalendar=false;
+const _calendarBeforeSickLeave=calendar;
+calendar=function(){
+ const original=monthEmployees;
+ const monthEnd=ymd(calY,calM,new Date(calY,calM,0).getDate());
+ const target=ymd(calY,calM,1)<=today()&&monthEnd>=today()?today():monthEnd;
+ const sickEmployees=original(calLoc,calY,calM).filter(e=>sickLeaveAt(e,target));
+ let markup='';
+ try{
+  monthEmployees=function(location,year,month){
+   const list=original(location,year,month);
+   if(showSickOnCalendar)return list;
+   const end=ymd(year,month,new Date(year,month,0).getDate());
+   const targetDate=ymd(year,month,1)<=today()&&end>=today()?today():end;
+   return list.filter(e=>!sickLeaveAt(e,targetDate));
+  };
+  markup=_calendarBeforeSickLeave();
+ }finally{monthEmployees=original}
+ const info='<section class="panel"><div class="panel-head"><h2>Radnici na bolovanju</h2>'+
+ '<button class="btn small" type="button" data-toggle-sick-calendar="1">'+
+ (showSickOnCalendar?'Sakrij bolovanja u kalendaru':'Prikaži bolovanja u kalendaru')+'</button></div>'+
+ '<p class="smalltext">'+(sickEmployees.length?
+ sickEmployees.map(e=>esc(e.name)+' (od '+esc(sickLeaveAt(e,target).from)+')').join(', ')+
+ '. Ovi radnici nisu označeni kao da su neopravdano izostali.':
+ 'Nema radnika na bolovanju na odabrani datum.')+
+ '</p></section>';
+ return markup.replace('<section class="panel balkan-month-grid">',info+'<section class="panel balkan-month-grid">');
+};
+const _dashboardBeforeSickLeave=overview;
+overview=function(){
+ const markup=_dashboardBeforeSickLeave();
+ const sick=S.employees.filter(e=>
+  e.active!==false&&!e.hidden&&!e.isTest&&employeeAt(e,today())&&
+  assigned(e,today())===adminLoc&&sickLeaveAt(e,today()));
+ if(!sick.length)return markup;
+ const card='<section class="panel"><h2>Na bolovanju – bez upozorenja o izostanku</h2>'+
+ '<p class="smalltext">'+sick.map(e=>esc(e.name)+' · od '+esc(sickLeaveAt(e,today()).from)).join('; ')+
+ '. Uređivanje i završetak bolovanja dostupni su u Radnici → Bolovanje.</p></section>';
+ return markup.replace('<section class="panel">',card+'<section class="panel">');
+};
+function sickLeaveForm(workerId,periodId=''){
+ const worker=S.employees.find(x=>x.id===workerId);if(!worker)return;
+ const leave=(worker.sickLeaves||[]).find(p=>p.id===periodId);
+ const records=(worker.sickLeaves||[]).slice().sort((a,b)=>b.from.localeCompare(a.from));
+ const list=records.map(p=>
+  '<div class="actionline" style="margin-bottom:8px">'+
+  '<span>'+esc(p.from)+' → '+esc(p.to||'do daljnjega')+'</span>'+
+  '<button class="btn small" type="button" data-sick-edit="'+esc(p.id)+'" data-sick-employee="'+esc(worker.id)+'">Uredi / završi</button>'+
+  '<button class="btn small danger" type="button" data-sick-remove="'+esc(p.id)+'" data-sick-employee="'+esc(worker.id)+'">Ukloni pogrešan unos</button>'+
+  '</div>').join('');
+ modal('Bolovanje – '+worker.name,
+ '<form id="balkanSickLeaveForm" class="grid">'+
+ '<input type="hidden" name="workerId" value="'+esc(worker.id)+'">'+
+ '<input type="hidden" name="periodId" value="'+esc(leave?.id||'')+'">'+
+ '<div class="fields"><div class="field"><label>Bolovanje počinje od *</label>'+
+ '<input type="date" name="from" required value="'+esc(leave?.from||today())+'"></div>'+
+ '<div class="field"><label>Bolovanje traje do (opcionalno)</label>'+
+ '<input type="date" name="to" value="'+esc(leave?.to||'')+'"></div></div>'+
+ '<div class="note info"><b>Do daljnjega:</b> ostavi datum završetka prazan. Radnik se neće pojavljivati u redovnom kalendaru niti dobijati upozorenja o nedolasku za taj period. Ne gube se raniji podaci. Kada se vrati na posao, klikni Uredi / završi i upiši posljednji dan bolovanja.</div>'+
+ '<div class="modalfoot"><button type="button" class="btn" data-act="close-modal">Odustani</button>'+
+ '<button type="submit" class="btn primary">Sačuvaj bolovanje</button></div></form>'+
+ '<div style="margin-top:12px"><h3>Prethodna i aktivna bolovanja</h3>'+
+ (list||'<p class="smalltext">Nema unesenih bolovanja.</p>')+'</div>');
+}
+document.getElementById('app').addEventListener('click',event=>{
+ const btn=event.target.closest('[data-sick-worker],[data-toggle-sick-calendar]');
+ if(!btn)return;
+ event.preventDefault();event.stopImmediatePropagation();
+ if(btn.dataset.toggleSickCalendar){
+  showSickOnCalendar=!showSickOnCalendar;render();return;
+ }
+ sickLeaveForm(btn.dataset.sickWorker);
+},true);
+document.getElementById('modal').addEventListener('click',async event=>{
+ const t=event.target.closest('[data-sick-edit],[data-sick-remove]');
+ if(!t)return;
+ event.preventDefault();event.stopImmediatePropagation();
+ const worker=S.employees.find(e=>e.id===t.dataset.sickEmployee);
+ if(!worker)return;
+ if(t.dataset.sickEdit){sickLeaveForm(worker.id,t.dataset.sickEdit);return}
+ const period=(worker.sickLeaves||[]).find(p=>p.id===t.dataset.sickRemove);
+ if(!period||!confirm('Ukloniti pogrešno uneseno bolovanje? Ranija skeniranja ostaju sačuvana.'))return;
+ worker.sickLeaves=worker.sickLeaves.filter(p=>p.id!==period.id);
+ audit('Uklonjeno bolovanje',worker.name+': '+period.from+' – '+(period.to||'do daljnjega'));
+ try{await save();sickLeaveForm(worker.id);render()}catch(err){alert('Greška pri čuvanju: '+err.message)}
+},true);
+document.getElementById('modal').addEventListener('submit',async event=>{
+ if(event.target.id!=='balkanSickLeaveForm')return;
+ event.preventDefault();event.stopImmediatePropagation();
+ if(!unlocked)return;
+ const d=Object.fromEntries(new FormData(event.target)),worker=S.employees.find(e=>e.id===d.workerId);
+ if(!worker)return;
+ if(!/^\d{4}-\d{2}-\d{2}$/.test(d.from)||d.to&&!/^\d{4}-\d{2}-\d{2}$/.test(d.to)){
+  alert('Unesi ispravne datume.');return;
+ }
+ if(d.to&&d.to<d.from){alert('Završetak ne može biti prije početka bolovanja.');return}
+ const periods=worker.sickLeaves||[];
+ if(periods.some(p=>p.id!==d.periodId&&(p.to||'9999-12-31')>=d.from&&(d.to||'9999-12-31')>=p.from)){
+  alert('Bolovanje se preklapa sa već evidentiranim periodom. Prvo uredi ili završi postojeći period.');return;
+ }
+ const period={id:d.periodId||uid(),from:d.from,to:d.to||''};
+ worker.sickLeaves=periods.filter(p=>p.id!==period.id).concat(period).sort((a,b)=>a.from.localeCompare(b.from));
+ audit(d.periodId?'Izmijenjeno bolovanje':'Počelo bolovanje',worker.name+': '+d.from+' – '+(d.to||'do daljnjega'));
+ try{await save();closeModal();render()}catch(err){alert('Greška: '+err.message)}
+},true);
 
 // Firebase bootstrap only: the legacy interface is not activated before authentication.
 window.BALKAN_V6={
