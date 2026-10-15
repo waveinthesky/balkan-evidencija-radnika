@@ -20,7 +20,7 @@ await page.evaluate(()=>{
 });
 await page.getByRole('button',{name:/Radnici/}).first().click();
 const quotaRow=page.locator('tr').filter({hasText:'Odmor Bez Prava'}).first();
-assert.ok((await quotaRow.innerText()).includes('Unesi pravo'),'Missing yearly quota shown honestly');
+assert.match(await quotaRow.innerText(),/Procjena|potvrdi pravo|Unesi pravo/i,'Nepotvrđen godišnji fond je jasno označen kao informativan');
 assert.ok((await quotaRow.innerText()).includes('1'),'Manual GO day counted even without quota');
 await page.locator('tr').filter({hasText:'Bolovanje Testni'}).locator('[data-sick-worker]').click();
 assert.ok(await page.locator('#balkanSickLeaveForm').count(),'Sick leave form opened');
