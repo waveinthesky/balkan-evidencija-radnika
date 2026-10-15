@@ -55,7 +55,7 @@ try{
   'All-workers annual table above employee details, bulk controls below');
  assert.equal(await page.locator('#balkanLiveLeaveSummary tr').filter({hasText:'Tabelarni Probni'}).count(),1);
  await page.locator('[data-leave-field=year]').fill('2025');
- await page.locator('[data-leave-field=year]').dispatchEvent('change');
+ await page.locator('[data-leave-field=year]').press('Tab');
  assert.ok((await page.locator('#balkanLiveLeaveSummary').innerText()).includes('Pravo 2025'),
   'Annual table follows selected year');
  const after=await page.evaluate(()=>{
