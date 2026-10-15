@@ -1636,10 +1636,12 @@ const _workersWithAllCards=workers;
 workers=function(){
  const original=_workersWithAllCards();
  const eligible=printableWorkerCards().length;
- return original.replace('<div class="panel">',
- '<div class="panel"><div class="actionline" style="margin-bottom:12px">'+
+ return original.replace('<section class="panel">',
+ '<section class="panel"><div class="actionline" style="margin-bottom:12px">'+
  '<button class="btn primary" type="button" data-print-all-workers="1">⎙ Štampaj kartice za sve radnike ('+eligible+')</button>'+
- '<span class="smalltext">Svaka kartica ima ime i važeći barkod. Testne i kartice bez stvarnog koda ne štampamo.</span></div>');
+ '<span class="smalltext">Svaka kartica ima ime i važeći barkod. Testne i kartice bez stvarnog koda ne štampamo.</span></div>')
+ .replace(/(<button class="btn small" data-edit-worker="([^"]+)">Uredi<\/button>)/g,
+ '$1<button class="btn small" data-print-card="$2">Kartica</button><button class="btn small" data-leave-emp="$2">Godišnji</button>');
 };
 document.getElementById('app').addEventListener('click',event=>{
  if(!event.target.closest('[data-print-all-workers]'))return;
