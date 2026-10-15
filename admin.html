@@ -44,6 +44,24 @@
 .balkan-summary article strong{display:block;font-size:27px;line-height:1.6}
 .balkan-summary article span{font-size:12px;color:#52627d}
 .balkan-summary table{width:100%}.balkan-help{font-size:12px;color:#596984}.balkan-clickables{display:flex;gap:7px;flex-wrap:wrap}
+
+.balkan-delay-colors{display:flex;flex-wrap:wrap;gap:8px;margin:10px 0}
+.balkan-delay-key{display:inline-flex;align-items:center;gap:5px;font-size:12px}
+.balkan-delay-key b{width:13px;height:13px;border-radius:4px;display:block}
+.balkan-delay-status{display:inline-block;border-radius:7px;padding:6px 8px;font-weight:700;font-size:12px;white-space:nowrap}
+.balkan-delay-ok{color:#07663f;background:#d7f7e3}
+.balkan-delay-warn{color:#9b4b04;background:#ffecd0}
+.balkan-delay-bad{color:#a31f2f;background:#ffe0e3}
+.balkan-delay-unknown{color:#4b5872;background:#e9edf3}
+.balkan-delay-stat{display:flex;flex-wrap:wrap;gap:12px;margin:12px 0}
+.balkan-delay-stat span{border:1px solid #e0e7ef;border-radius:9px;padding:9px 12px;font-weight:700}
+.balkan-delay-table{font-size:12px;white-space:nowrap;width:100%}
+.balkan-delay-table th,.balkan-delay-table td{padding:9px 7px!important}
+.balkan-delay-row-ok{border-left:4px solid #12a16a}
+.balkan-delay-row-warn{border-left:4px solid #ed950f}
+.balkan-delay-row-bad{border-left:4px solid #d74049}
+.balkan-delay-controls{display:flex;gap:10px;align-items:end;flex-wrap:wrap}
+.balkan-delay-controls button[aria-pressed="true"]{background:#225ed4;color:white;border-color:#225ed4}
 </style>
 </head>
 <body><div id="v6Login" style="position:fixed;inset:0;background:#f2f6fb;z-index:9999;display:grid;place-items:center;font-family:Arial,sans-serif;padding:20px"><div style="background:white;border:1px solid #d9e2ef;border-radius:17px;padding:30px;width:100%;max-width:410px;box-shadow:0 12px 48px #14283F12"><h1 style="font-size:24px">BALKAN – Administracija</h1><p id="v6AuthMessage">Povezivanje sa Firebaseom…</p><form id="v6LoginForm" style="display:none"><div style="display:flex;gap:8px;margin-bottom:15px"><button type="button" id="v6ModeEmail" aria-pressed="true" style="flex:1;padding:10px;border:1px solid #8fa6c9;border-radius:8px;background:#eaf1ff">E-mail</button><button type="button" id="v6ModeBarcode" aria-pressed="false" style="flex:1;padding:10px;border:1px solid #d0dbe9;border-radius:8px;background:white">Barkod</button></div><label id="v6EmailLabel">E-mail administratora<input id="v6Email" type="email" required autocomplete="username" style="display:block;width:100%;padding:11px;margin:7px 0 14px"></label><label id="v6BarcodeLabel" hidden>Administratorski barkod<input id="v6AdminBarcode" type="text" autocomplete="off" spellcheck="false" autocapitalize="characters" placeholder="Skeniraj svoju admin karticu" style="display:block;width:100%;padding:11px;margin:7px 0 14px"></label><label>Lozinka administratora (obavezna za oba načina)<input id="v6Password" type="password" autocomplete="current-password" required style="display:block;width:100%;padding:11px;margin:7px 0 14px"></label><button style="width:100%;padding:13px;background:#2b68db;color:white;border:0;border-radius:9px" type="submit">Prijavi se</button></form><p style="font-size:12px;color:#62738e">Samo administratorski Firebase nalog može mijenjati evidenciju.</p></div></div><div id="app"></div><div id="modal"></div>
@@ -1239,6 +1257,111 @@ document.getElementById('app').addEventListener('click',async event=>{
  S.employees=S.employees.filter(e=>e.id!==id);
  audit('Obrisan radnik bez radnih zapisa',employee.name);
  try{await save();render()}catch(error){alert('Brisanje nije potvrđeno: '+error.message)}
+},true);
+
+
+let latenessPeriod='day',latenessAnchor=today();
+function latenessRange(){
+ let target=/^\d{4}-\d{2}-\d{2}$/.test(latenessAnchor)?latenessAnchor:today();
+ if(latenessPeriod==='day')return {dates:[target],title:'Dan: '+target};
+ if(latenessPeriod==='month'){
+  const [y,m]=target.split('-').map(Number);
+  return {dates:Array.from({length:new Date(y,m,0).getDate()},(_,i)=>ymd(y,m,i+1)),title:'Mjesec: '+MONTHS[m-1]+' '+y};
+ }
+ const dt=localDate(target);dt.setDate(dt.getDate()-((dt.getDay()+6)%7));
+ const dates=[];
+ for(let i=0;i<7;i++){dates.push(ymd(dt.getFullYear(),dt.getMonth()+1,dt.getDate()));dt.setDate(dt.getDate()+1)}
+ return {dates,title:'Sedmica: '+dates[0]+' – '+dates[6]};
+}
+function latenessDetails(){
+ const {dates,title}=latenessRange();
+ const stats=new Map(),details=[];
+ let total={ok:0,warn:0,bad:0,late:0,unknown:0};
+ for(const date of dates){
+  if(date>today())continue;
+  const workers=S.employees.filter(e=>
+    (showAllStaff||(!e.hidden&&!e.isTest&&e.active!==false))&&
+    employeeAt(e,date)&&assigned(e,date)===adminLoc);
+  for(const e of workers){
+   const sc=getSchedule(adminLoc,date),z=eventsDay(e.id,adminLoc,date),o=override(e.id,date,adminLoc);
+   const shift=shiftInfo(e,date,adminLoc);
+   let kind='unknown',label='',delay=0,first=z.starts[0],record=false;
+   if(holiday(adminLoc,date,e)){label='Praznik / neradno'}
+   else if(!isWorking(adminLoc,date)){label='Neradni dan'}
+   else if(o&&['GO','BO','ND'].includes(o.status)){label=statusText(o.status)}
+   else if(o?.status==='IA'){label='Potvrđen izostanak'}
+   else if(first){
+    const m=tardiness(e,date,adminLoc);
+    if(m==null){label='Smjena nije podešena'}
+    else{
+     delay=m;record=true;
+     kind=m===0?'ok':m<=10?'warn':'bad';
+     label=m===0?'Na vrijeme':m<=10?'Kasnio '+m+' min':'Kasnio '+m+' min';
+    }
+   }else if(o?.status==='P'){label='Ručno prisutan · bez sata prijave'}
+   else if(attendanceSignal(e,adminLoc,date)){label='Bez prijave – provjeriti'}
+   else {label='Bez potvrđenih podataka'}
+   if(!stats.has(e.id))stats.set(e.id,{name:e.name,ok:0,warn:0,bad:0,late:0,unknown:0});
+   const agg=stats.get(e.id);
+   if(record){
+    agg[kind]++;total[kind]++;agg.late+=delay;total.late+=delay;
+   }else if(label==='Bez prijave – provjeriti'){
+    agg.unknown++;total.unknown++;
+   }
+   const dayHref='<button class="btn small" data-day="'+date+'" data-emp="'+esc(e.id)+'" data-loc="'+esc(adminLoc)+'">Detalji</button>';
+   const style=kind==='ok'?'balkan-delay-row-ok':kind==='warn'?'balkan-delay-row-warn':kind==='bad'?'balkan-delay-row-bad':'';
+   details.push('<tr class="'+style+'"><td>'+esc(date.split('-').reverse().join('.'))+'</td><td>'+esc(e.name)+'</td>'+
+     '<td>'+esc(shift.label)+' <small>'+esc(shift.start||'—')+'</small></td>'+
+     '<td>'+esc(first?clock(first.at):'—')+'</td>'+
+     '<td><span class="balkan-delay-status balkan-delay-'+kind+'">'+esc(label)+'</span></td>'+
+     '<td>'+dayHref+'</td></tr>');
+  }
+ }
+ const sums=[...stats.values()].sort((a,b)=>a.name.localeCompare(b.name,'bs'));
+ const summaryRows=sums.map(e=>'<tr><td><b>'+esc(e.name)+'</b></td>'+
+ '<td><span class="balkan-delay-status balkan-delay-ok">'+e.ok+'</span></td>'+
+ '<td><span class="balkan-delay-status balkan-delay-warn">'+e.warn+'</span></td>'+
+ '<td><span class="balkan-delay-status balkan-delay-bad">'+e.bad+'</span></td>'+
+ '<td><b>'+e.late+' min</b></td><td>'+e.unknown+'</td></tr>').join('');
+ const formatSpan=(count,label,klass)=>'<span class="balkan-delay-status balkan-delay-'+klass+'">'+label+': '+count+'</span>';
+ const selected=(period,name)=>'<button class="btn small" type="button" data-delay-period="'+period+'" aria-pressed="'+(latenessPeriod===period)+'">'+name+'</button>';
+ return '<section class="panel" id="balkanLatenessPanel">'+
+ '<div class="panel-head"><h2>Prijave i kašnjenja · '+esc(locName(adminLoc))+'</h2><span class="smalltext">'+esc(title)+'</span></div>'+
+ '<div class="balkan-delay-controls"><div class="field"><label>Odaberi datum</label><input type="date" id="balkanDelayDate" value="'+latenessAnchor+'" max="'+today()+'"></div>'+
+ '<div class="balkan-clickables">'+selected('day','Dan')+selected('week','Sedmica')+selected('month','Mjesec')+'</div></div>'+
+ '<div class="balkan-delay-colors">'+
+ '<span class="balkan-delay-key"><b style="background:#12a16a"></b> Zeleno: na vrijeme</span>'+
+ '<span class="balkan-delay-key"><b style="background:#ed950f"></b> Narandžasto: kasni 1–10 min</span>'+
+ '<span class="balkan-delay-key"><b style="background:#d74049"></b> Crveno: kasni preko 10 min</span>'+
+ '<span class="balkan-delay-key"><b style="background:#a3afc3"></b> Sivo: nedostaje potvrda ili raspored</span></div>'+
+ '<div class="balkan-delay-stat">'+formatSpan(total.ok,'Na vrijeme','ok')+
+ formatSpan(total.warn,'Manje kašnjenje','warn')+formatSpan(total.bad,'Veće kašnjenje','bad')+
+ '<span>Ukupno kašnjenje: '+total.late+' min</span><span>Bez prijave za provjeru: '+total.unknown+'</span></div>'+
+ '<h3>Ukupno po zaposlenom – '+(latenessPeriod==='day'?'dan':latenessPeriod==='week'?'sedmica':'mjesec')+'</h3>'+
+ '<div class="tablewrap"><table class="simpletable balkan-delay-table"><thead><tr><th>Radnik</th><th>Na vrijeme</th><th>Do 10 min</th><th>Preko 10 min</th><th>Ukupno kasnio</th><th>Bez prijave</th></tr></thead><tbody>'+
+ (summaryRows||'<tr><td colspan="6">Nema evidentiranih radnih dana.</td></tr>')+'</tbody></table></div>'+
+ '<h3 style="margin-top:20px">Detaljno po danima</h3>'+
+ '<div class="tablewrap"><table class="simpletable balkan-delay-table"><thead><tr><th>Datum</th><th>Radnik</th><th>Smjena / početak</th><th>Prijava</th><th>Rezultat</th><th>Dan</th></tr></thead><tbody>'+
+ (details.join('')||'<tr><td colspan="6">Nema evidentiranih dana.</td></tr>')+'</tbody></table></div>'+
+ '<p class="smalltext">Kašnjenja se računaju od početka dodijeljene smjene, nakon tolerancije objekta. Bez barkoda nije dokazano odsustvo. Ovo je informativni pregled i administrator može ispraviti pogrešne evidencije.</p></section>';
+}
+const _overviewBeforeDelay=overview;
+overview=function(){
+ const page=_overviewBeforeDelay(),part=latenessDetails();
+ const end=page.indexOf('</section>');
+ return end>=0?page.slice(0,end+10)+part+page.slice(end+10):page+part;
+};
+const _reportsBeforeDelay=reports;
+reports=function(){return _reportsBeforeDelay()+latenessDetails()};
+document.getElementById('app').addEventListener('click',event=>{
+ const control=event.target.closest('[data-delay-period]');
+ if(!control)return;
+ event.preventDefault();event.stopImmediatePropagation();
+ latenessPeriod=control.dataset.delayPeriod;render();
+},true);
+document.getElementById('app').addEventListener('change',event=>{
+ if(event.target?.id!=='balkanDelayDate')return;
+ latenessAnchor=event.target.value||today();render();
 },true);
 
 // Firebase bootstrap only: the legacy interface is not activated before authentication.
