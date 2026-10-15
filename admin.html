@@ -1087,6 +1087,160 @@ overview=function(){
  messages.join('')+'</tbody></table></div></section>';
 };
 
+
+let showAllStaff=false;
+const _originalEmployeeNames=employeeNames;
+employeeNames=function(locId,date){
+ return _originalEmployeeNames(locId,date).filter(e=>showAllStaff||(!e.hidden&&!e.isTest&&e.active!==false));
+};
+const _originalMonthEmployees=monthEmployees;
+monthEmployees=function(locId,y,m){
+ return _originalMonthEmployees(locId,y,m).filter(e=>showAllStaff||(!e.hidden&&!e.isTest&&e.active!==false));
+};
+function yearLeaveSummary(e,year){
+ const quotaRaw=e.leaveQuotaByYear?.[year],quota=quotaRaw==null?null:Number(quotaRaw);
+ const carryRaw=e.leaveCarryByYear?.[year];
+ const archiveCarry=year===2026&&carryRaw==null?window.BALKAN_ARCHIVE?.getCarryover?.(e.name):null;
+ const carry=carryRaw==null?(archiveCarry?.balance??0):Number(carryRaw);
+ const provisional=carryRaw==null&&!!archiveCarry;
+ const yearLast=new Date(year,11,31).getDate(),todayValue=today();
+ let used=0,planned=0,confirmedAbsences=0;
+ for(let m=1;m<=12;m++){
+  for(let d=1;d<=new Date(year,m,0).getDate();d++){
+   const date=ymd(year,m,d),loc=assigned(e,date);
+   if(!employeeAt(e,date)||!loc)continue;
+   const status=override(e.id,date,loc)?.status;
+   if(status==='IA')confirmedAbsences++;
+   if(status!=='GO'||!isWorking(loc,date)||holiday(loc,date,e))continue;
+   if(date<=todayValue)used++;else planned++;
+  }
+ }
+ return {quota,carry,provisional,used,planned,confirmedAbsences,remaining:quota==null?null:quota+carry-used-planned};
+}
+function dateRange(from,to){
+ const result=[];let d=localDate(from),last=localDate(to);
+ while(d<=last&&result.length<=370){result.push(ymd(d.getFullYear(),d.getMonth()+1,d.getDate()));d.setDate(d.getDate()+1)}
+ return result;
+}
+function attendanceSignal(e,loc,date){
+ if(!employeeAt(e,date)||assigned(e,date)!==loc)return null;
+ if(!e.attendanceFrom||e.attendanceFrom>date)return null;
+ if(!isWorking(loc,date)||holiday(loc,date,e))return null;
+ const manual=override(e.id,date,loc)?.status;
+ if(['P','GO','BO','ND','IA','H','VH'].includes(manual))return null;
+ if(evs(e.id,loc,date).some(x=>x.kind==='in'))return null;
+ if(date>today())return null;
+ if(date===today()){
+  const start=plannedStart(e,date,loc);
+  if(!start)return null;
+  const sc=getSchedule(loc,date);
+  const now=minutes(pad(new Date().getHours())+':'+pad(new Date().getMinutes()));
+  if(now<=minutes(start)+Number(sc?.grace||0))return null;
+ }
+ return 'N';
+}
+function intervalCounters(e,loc,from,to){
+ let late=0,lateDays=0,needsCheck=0,absent=0,worked=0;
+ for(const day of dateRange(from,to)){
+  if(!employeeAt(e,day)||assigned(e,day)!==loc)continue;
+  const gap=attendanceSignal(e,loc,day);if(gap)needsCheck++;
+  if(override(e.id,day,loc)?.status==='IA')absent++;
+  const val=tardiness(e,day,loc);if(val!=null&&val>0){late+=val;lateDays++}
+  worked+=eventsDay(e.id,loc,day).worked;
+ }
+ return {late,lateDays,needsCheck,absent,worked};
+}
+function simpleDateBack(days){
+ const dt=localDate(today());dt.setDate(dt.getDate()-days);
+ return ymd(dt.getFullYear(),dt.getMonth()+1,dt.getDate());
+}
+overview=function(){
+ const date=today(),startMonth=date.slice(0,8)+'01',weekStart=simpleDateBack((new Date().getDay()+6)%7);
+ const employees=employeeNames(adminLoc,date);
+ const rows=employees.map(e=>{
+  const todayData=intervalCounters(e,adminLoc,date,date),week=intervalCounters(e,adminLoc,weekStart,date),month=intervalCounters(e,adminLoc,startMonth,date);
+  const leave=yearLeaveSummary(e,new Date().getFullYear());
+  const scan=eventsDay(e.id,adminLoc,date);
+  const status=dayStatus(e,date,adminLoc);
+  return {e,todayData,week,month,leave,scan,status};
+ });
+ const total=key=>rows.reduce((sum,r)=>sum+r.month[key],0),lateToday=rows.reduce((sum,r)=>sum+r.todayData.late,0);
+ const summary=[['Aktivnih radnika',employees.length],['Kašnjenja danas',lateToday+' min'],['Kašnjenja u mjesecu',total('late')+' min'],['Dani bez prijave za provjeru',total('needsCheck')],['Potvrđeni izostanci u mjesecu',total('absent')]];
+ const alerts=rows.filter(r=>r.todayData.late||r.todayData.needsCheck||r.scan.open).map(r=>{
+  let msg=[];
+  if(r.todayData.late)msg.push('Kasni '+r.todayData.late+' min');
+  if(r.todayData.needsCheck)msg.push('Nema prijave – provjeriti');
+  if(r.scan.open)msg.push('Otvorena prijava / nema odjave');
+  return '<tr><td>'+esc(r.e.name)+'</td><td>'+msg.map(esc).join('; ')+'</td><td><button class="btn small" data-day="'+date+'" data-emp="'+esc(r.e.id)+'" data-loc="'+esc(adminLoc)+'">Detalji</button></td></tr>';
+ }).join('');
+ const allRows=rows.map(r=>{
+  const leave=r.leave,available=leave.remaining==null?'Unesi pravo':leave.remaining+' dana'+(leave.provisional?' *':'');
+  const first=r.scan.starts[0];
+  const shift=shiftInfo(r.e,date,adminLoc);
+  return '<tr><td><b>'+esc(r.e.name)+'</b></td><td>'+esc(shift.label)+'<br><small>'+esc(shift.start||'Nije određeno')+'</small></td><td>'+esc(first?clock(first.at):'—')+'</td><td>'+r.todayData.late+' min</td><td>'+r.week.late+' min</td><td>'+r.month.late+' min</td><td>'+r.month.needsCheck+'</td><td>'+r.month.absent+'</td><td>'+available+'</td></tr>';
+ }).join('');
+ const currentYear=new Date().getFullYear();
+ return pageTitle('Administratorski pregled','Stanje zaposlenih, smjena i upozorenja na jednom mjestu · '+date,
+  '<button class="btn" data-route="radnici">Radnici i odmori</button><button class="btn" data-route="izvjestaji">Izvještaji</button><button class="btn primary" data-act="manual">+ Ručna evidencija</button>')+
+ '<section class="panel"><div class="toolbar"><div class="field"><label>Objekat</label><select data-field="adminLoc">'+selections(adminLoc)+'</select></div><div class="smalltext">Kašnjenje je samo prema dodijeljenoj smjeni i stvarnoj prijavi. Nepostojanje barkoda samo po sebi nije dokaz izostanka.</div></div>'+
+ '<div class="balkan-summary">'+summary.map(([name,value])=>'<article><span>'+esc(name)+'</span><strong>'+value+'</strong></article>').join('')+'</div></section>'+
+ '<section class="panel"><h2>Obavještenja za danas</h2><div class="tablewrap"><table class="simpletable"><thead><tr><th>Radnik</th><th>Obavještenje</th><th>Detalji</th></tr></thead><tbody>'+
+ (alerts||'<tr><td colspan="3">Trenutno nema upozorenja na osnovu dostupnih prijava.</td></tr>')+'</tbody></table></div></section>'+
+ '<section class="panel"><h2>Danas · sedmica · mjesec · godišnji odmor '+currentYear+'</h2><div class="tablewrap"><table class="simpletable"><thead><tr><th>Zaposleni</th><th>Smjena</th><th>Dolazak</th><th>Kasni danas</th><th>Kasni sedmica</th><th>Kasni mjesec</th><th>Bez prijave*</th><th>Potvrđen izostanak</th><th>Preostali odmor</th></tr></thead><tbody>'+
+ (allRows||'<tr><td colspan="9">Nema aktivnih radnika na ovom objektu.</td></tr>')+'</tbody></table></div>'+
+ '<p class="smalltext">* Samo od datuma početka barkod evidencije, bez neradnih dana, praznika i prijavljenih odsustava. Potrebna provjera administratora. Stanje godišnjeg s oznakom * koristi privremeni saldo iz arhive 2025. koji treba potvrditi.</p></section>';
+};
+workers=function(){
+ const workers=S.employees.slice().filter(e=>showAllStaff||(!e.hidden&&!e.isTest&&e.active!==false)).sort((a,b)=>a.name.localeCompare(b.name,'bs'));
+ const year=new Date().getFullYear();
+ const body=workers.map(e=>{
+  const leave=yearLeaveSummary(e,year),used=leave.used,planned=leave.planned;
+  const quota=leave.quota==null?'—':leave.quota,carry=(leave.carry||leave.provisional)?leave.carry+(leave.provisional?'*':''):'0';
+  const rest=leave.remaining==null?'Unesi pravo':leave.remaining;
+  const markers=[e.isTest?'Testni':'',e.hidden?'Skriven':'',e.active===false?'Neaktivan':''].filter(Boolean).join(', ')||'Aktivan';
+  return '<tr><td><b>'+esc(e.name)+'</b><br><small>'+markers+'</small></td><td><code>'+esc(e.barcodeAssigned===false?'Kartica nije dodijeljena':e.barcode||'—')+'</code></td><td>'+esc(locName(e.defaultLocationId))+'</td>'+
+  '<td>'+esc(shiftInfo(e,today(),e.defaultLocationId).label)+'</td><td>'+quota+'</td><td>'+carry+'</td><td>'+used+'</td><td>'+planned+'</td><td><b>'+rest+'</b></td>'+
+  '<td><div class="balkan-clickables"><button class="btn small" data-edit-worker="'+esc(e.id)+'">Uredi</button>'+
+  '<button class="btn small" data-worker-history="'+esc(e.id)+'">Istorija</button>'+
+  '<button class="btn small" data-worker-hide="'+esc(e.id)+'">'+(e.hidden?'Prikaži':'Sakrij')+'</button>'+
+  '<button class="btn small danger" data-worker-delete="'+esc(e.id)+'">Obriši</button></div></td></tr>';
+ }).join('');
+ return pageTitle('Radnici i godišnji odmori','Skriveni, testni i neaktivni radnici ostaju sačuvani za istoriju',
+ '<button class="btn primary" data-act="add-worker">+ Dodaj radnika</button><button class="btn" data-worker-toggle="1">'+(showAllStaff?'Sakrij neaktivne/testne':'Prikaži i neaktivne/testne')+'</button>')+
+ '<section class="panel"><h2>Stanje godišnjeg odmora za '+year+'.</h2><div class="tablewrap"><table class="simpletable"><thead><tr><th>Radnik</th><th>Barkod</th><th>Objekat</th><th>Smjena</th><th>Pravo</th><th>Preneseno</th><th>Iskorišteno</th><th>Planirano</th><th>Preostalo</th><th>Opcije</th></tr></thead><tbody>'+
+ (body||'<tr><td colspan="10">Nema zaposlenih u odabranom prikazu.</td></tr>')+'</tbody></table></div>'+
+ '<p class="smalltext">Godišnji se računa iz oznaka GO samo na planiranim radnim danima, bez praznika. P = ručna oznaka i ne daje sate. Preostalo = pravo + preneseno − iskorišteno − planirano. Zvjezdica označava privremeni saldo iz arhive 2025. koji treba provjeriti. Zakonski broj dana unosi administrator prema individualnom rješenju.</p></section>';
+};
+const _originalEnhancedReports=reports;
+reports=function(){
+ const base=_originalEnhancedReports(),year=calY,employees=monthEmployees(calLoc,calY,calM);
+ const result=employees.map(e=>{
+  const leave=yearLeaveSummary(e,year),from=ymd(calY,calM,1),to=ymd(calY,calM,new Date(calY,calM,0).getDate()),attention=intervalCounters(e,calLoc,from,to);
+  return '<tr><td>'+esc(e.name)+'</td><td>'+(leave.quota==null?'—':leave.quota)+'</td><td>'+leave.carry+(leave.provisional?'*':'')+'</td><td>'+leave.used+'</td><td>'+leave.planned+'</td><td>'+(leave.remaining==null?'Unesi pravo':leave.remaining)+'</td><td>'+attention.needsCheck+'</td><td>'+attention.absent+'</td></tr>';
+ }).join('');
+ return base+'<section class="panel"><h2>Godišnji odmor i dani bez prijave · '+calY+'</h2><div class="tablewrap"><table class="simpletable"><thead><tr><th>Radnik</th><th>Pravo</th><th>Preneseno</th><th>Iskorišteno</th><th>Planirano</th><th>Preostalo</th><th>Bez prijave (provjera)</th><th>Potvrđeni izostanci</th></tr></thead><tbody>'+
+ (result||'<tr><td colspan="8">Nema zaposlenih.</td></tr>')+'</tbody></table></div>'+
+ '<p class="smalltext">Bez prijave je upozorenje od početka evidencije, ne dokazan izostanak. Potvrđeni izostanak je zasebna ručna oznaka IA. Godišnji se ne odbija zbog dana bez skeniranja.</p></section>';
+};
+document.getElementById('app').addEventListener('click',async event=>{
+ const target=event.target.closest('[data-worker-toggle],[data-worker-hide],[data-worker-delete]');
+ if(!target)return;
+ event.preventDefault();event.stopImmediatePropagation();
+ if(target.dataset.workerToggle){showAllStaff=!showAllStaff;render();return}
+ const id=target.dataset.workerHide||target.dataset.workerDelete,employee=S.employees.find(e=>e.id===id);
+ if(!employee||!unlocked)return;
+ if(target.dataset.workerHide){
+  employee.hidden=!employee.hidden;audit(employee.hidden?'Sakriven radnik':'Prikazan radnik',employee.name);
+  try{await save();render()}catch(error){alert('Nije sačuvano: '+error.message)}return;
+ }
+ const hasHistory=S.events.some(x=>x.empId===id)||S.overrides.some(x=>x.empId===id)||!!employee.archive2025Key;
+ if(hasHistory){alert('Radnik ima istoriju rada/odsustava ili arhivu 2025. Zbog zaštite podataka ne može se trajno izbrisati. Koristi Sakrij ili deaktiviraj.');return}
+ if(!confirm('Trajno obrisati testnog radnika '+employee.name+' bez zapisa? Ovo se ne može poništiti.'))return;
+ S.employees=S.employees.filter(e=>e.id!==id);
+ audit('Obrisan radnik bez radnih zapisa',employee.name);
+ try{await save();render()}catch(error){alert('Brisanje nije potvrđeno: '+error.message)}
+},true);
+
 // Firebase bootstrap only: the legacy interface is not activated before authentication.
 window.BALKAN_V6={
  boot:async()=>{await init(); if(!S.admin)S.admin={username:'Firebase administrator'};unlocked=true;route='pregled';S._sync={url:'',token:'',deviceId:S._sync?.deviceId||uid(),seeded:true,lastAt:null};S._pending=[];render()},
