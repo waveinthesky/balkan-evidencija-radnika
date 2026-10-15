@@ -43,9 +43,13 @@ assert.equal(balance.annualRemaining,24-5-balance.used-balance.planned,'Full-yea
 assert.ok(rowText.includes('slobodno do danas '+balance.remaining),'Dashboard shows current accrued balance: '+rowText);
 assert.equal(await page.getByText('Skriveni Probni').count(),0,'Hidden test staff excluded from overview');
 await page.getByRole('button',{name:/Radnici/}).first().click();
-const staffRow=page.locator('tr').filter({hasText:'Smjenski Test'}).first();
-const staffText=await staffRow.innerText();
-for(const part of ['24','-5',String(balance.remaining)])assert.ok(staffText.includes(part),'Annual leave part '+part);
+assert.equal(await page.locator('#balkanLiveLeaveSummary').count(),0,'Annual balances removed from Radnici tab');
+assert.equal(await page.locator('#balkanWorkerManagement tr').filter({hasText:'Smjenski Test'}).count(),1,'Worker management remains in Radnici');
+await page.locator('[data-route="godisnji"]').first().click();
+const leaveRow=page.locator('#balkanLiveLeaveSummary tr').filter({hasText:'Smjenski Test'}).first();
+const leaveText=await leaveRow.innerText();
+for(const part of ['24','-5',String(balance.remaining)])assert.ok(leaveText.includes(part),'Annual leave part '+part);
+await page.locator('[data-route="radnici"]').first().click();
 assert.equal(await page.getByText('Skriveni Probni').count(),0,'Hidden staff not shown by default');
 await page.locator('[data-worker-toggle]').click();
 assert.ok(await page.getByText('Skriveni Probni').count(),'Hidden staff displayed on demand');
