@@ -974,7 +974,19 @@ calendar=function(){
  '<p class="smalltext">Jedan klik na običan dan mijenja P ↔ N. Detalji su ispod kalendara. Na dane sa skeniranjem, odmorom ili praznikom klik otvara samo detalje, da ne izgubimo postojeće podatke.</p></section>'+
  '<section class="panel balkan-month-detail" id="dayPanel">'+(chosen?dayPanel(chosen,chosenDate,calLoc):'<h2>Detalji dana</h2><p>Klikni na dan u tabeli za status, dolazak, odlazak i dodatne izmjene.</p>')+'</section>';
 };
-function plannedStart(employee,date){return employee.shiftCalendar?.[date]||employee.shiftStart||''}
+function shiftInfo(employee,date,locId){
+ const location=locId||assigned(employee,date),schedule=getSchedule(location,date);
+ const dayMode=employee.shiftByDate?.[date];
+ const selected=dayMode&&dayMode!=='inherit'?dayMode:employee.defaultShift||'';
+ const manual=employee.shiftCalendar?.[date]||'';
+ if(dayMode==='custom'&&manual)return {start:manual,end:'',label:'Posebna smjena'};
+ if(selected==='first'&&schedule?.firstStart)return {start:schedule.firstStart,end:schedule.firstEnd||'',label:'Prva smjena'};
+ if(selected==='second'&&schedule?.secondStart)return {start:schedule.secondStart,end:schedule.secondEnd||'',label:'Druga smjena'};
+ if(manual)return {start:manual,end:'',label:'Pojedinačna smjena'};
+ if((selected==='custom'||!selected)&&employee.shiftStart)return {start:employee.shiftStart,end:'',label:'Individualni raspored'};
+ return {start:'',end:'',label:'Smjena nije podešena'};
+}
+function plannedStart(employee,date,locId){return shiftInfo(employee,date,locId).start}
 function tardiness(employee,date,locId){
  const z=eventsDay(employee.id,locId,date),scheduled=plannedStart(employee,date),sc=getSchedule(locId,date);
  if(!z.starts.length||!scheduled||!sc||!isWorking(locId,date)||holiday(locId,date,employee))return null;
@@ -1024,12 +1036,13 @@ reports=function(){
 };
 const _baseDayPanel=dayPanel;
 dayPanel=function(employee,date,locId){
- const d=tardiness(employee,date,locId),start=plannedStart(employee,date),sc=getSchedule(locId,date);
+ const d=tardiness(employee,date,locId),info=shiftInfo(employee,date,locId),start=info.start,sc=getSchedule(locId,date);
  const msg=start?(d==null?'Nema potvrđenog kašnjenja za ovaj dan.':d>0?'Kašnjenje: '+d+' min':'U okviru dozvoljenog vremena.'):'Nije unesen početak smjene – kašnjenje se ne može pouzdano izračunati.';
  return _baseDayPanel(employee,date,locId)+
- '<div class="note info"><b>Početak smjene:</b> '+esc(start||'nije podešen')+' · <b>Tolerancija:</b> '+(sc?.grace||0)+' min · '+esc(msg)+'</div>'+
+ '<div class="note info"><b>Planirana smjena:</b> '+esc(info.label)+' · <b>Početak:</b> '+esc(start||'nije podešen')+' · <b>Tolerancija:</b> '+(sc?.grace||0)+' min · '+esc(msg)+'</div>'+
  '<form id="balkanShiftDayForm" class="actionline" style="margin-top:12px"><input type="hidden" name="empId" value="'+esc(employee.id)+'"><input type="hidden" name="date" value="'+esc(date)+'">'+
- '<label>Početak smjene za ovaj dan: <input type="time" name="start" value="'+esc(employee.shiftCalendar?.[date]||'')+'"></label>'+
+ '<label>Smjena danas: <select name="shift"><option value="inherit"'+(!employee.shiftByDate?.[date]||employee.shiftByDate[date]==='inherit'?' selected':'')+'>Prema profilu radnika</option><option value="first"'+(employee.shiftByDate?.[date]==='first'?' selected':'')+'>Prva smjena</option><option value="second"'+(employee.shiftByDate?.[date]==='second'?' selected':'')+'>Druga smjena</option><option value="custom"'+(employee.shiftByDate?.[date]==='custom'?' selected':'')+'>Posebni početak</option></select></label>'+ 
+ '<label>Posebni početak (ako je potreban): <input type="time" name="start" value="'+esc(employee.shiftCalendar?.[date]||'')+'"></label>'+
  '<button class="btn" type="submit">Sačuvaj smjenu</button></form>';
 };
 document.getElementById('app').addEventListener('submit',async function(event){
@@ -1037,9 +1050,18 @@ document.getElementById('app').addEventListener('submit',async function(event){
  event.preventDefault();event.stopImmediatePropagation();
  const d=Object.fromEntries(new FormData(event.target)),e=S.employees.find(x=>x.id===d.empId);
  if(!e||!unlocked)return;
- e.shiftCalendar||={};
- if(d.start)e.shiftCalendar[d.date]=d.start;else delete e.shiftCalendar[d.date];
- audit('Početak smjene',e.name+' · '+d.date+' · '+(d.start||'nije određen'));
+ e.shiftCalendar||={};e.shiftByDate||={};
+ if(d.shift==='custom'){
+  if(!d.start)throw Error('Za posebnu smjenu unesi početak.');
+  e.shiftCalendar[d.date]=d.start;e.shiftByDate[d.date]='custom';
+ }else if(d.shift==='first'||d.shift==='second'){
+  const sc=getSchedule(assigned(e,d.date),d.date);
+  if(!(d.shift==='first'?sc?.firstStart:sc?.secondStart))throw Error('Izabrana smjena nije podešena u Objektima.');
+  e.shiftByDate[d.date]=d.shift;delete e.shiftCalendar[d.date];
+ }else{
+  delete e.shiftByDate[d.date];delete e.shiftCalendar[d.date];
+ }
+ audit('Raspored smjene',e.name+' · '+d.date+' · '+(d.shift||'inherit')+' · '+(d.start||''));
  try{await save();render();document.getElementById('dayPanel')?.scrollIntoView({block:'nearest'})}
  catch(err){alert('Nije sačuvano: '+err.message)}
 },true);
