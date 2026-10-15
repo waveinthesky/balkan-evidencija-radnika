@@ -50,3 +50,4 @@ jobs:
           node tests/calculations.mjs
           node tests/shifts-leave-dashboard.mjs
           node tests/lateness-color-dashboard.mjs
+          node tests/clock-24h.mjs
