@@ -26,6 +26,7 @@ try{
   data.holidays.push({id:'audit-holiday',date:'2026-10-07',endDate:'2026-10-08',
    type:'religious',label:'Vjerski praznik',paid:true,locationId:'m1',employeeId:employee.id});
   employee.sickLeaves=[{id:'audit-sick',from:'2026-10-09',to:'2026-10-10'}];
+  data.overrides.push({id:'audit-holiday-overlap',empId:employee.id,locId:'m1',date:'2026-10-08',status:'GO'});
   data.employees.push({id:'audit-placeholder',name:'Bez Barkoda',active:true,
    barcode:'NEPOSTAVLJENO-000',defaultLocationId:'m1',hiredAt:'2026-01-01',attendanceFrom:'2026-10-01',
    assignments:[{from:'2026-01-01',locationId:'m1'}]});
@@ -34,15 +35,18 @@ try{
   const july=annualEntitlementSuggestion({...employee,hiredAt:'2026-07-01'},2026,5);
   const holidays=[holiday('m1','2026-10-07',employee)?.type,holiday('m1','2026-10-08',employee)?.type];
   const goDays=leaveDays('2026-10-05','2026-10-10',[1,2,3,4,5,6],[],employee.id);
+  const overlap={status:dayStatus(employee,'2026-10-08','m1'),used:leaveCount(employee.id,2026).used};
   const candidates=likelyLeaveReviewDays(employee,2026);
   const before=data.overrides.length;
   window.BALKAN_V6.render();
-  return {allowance5,allowance6,july,holidays,goDays,candidates:candidates.map(x=>x.date),before};
+  return {allowance5,allowance6,july,holidays,goDays,overlap,candidates:candidates.map(x=>x.date),before};
  });
  assert.equal(logic.allowance5.days,20,'Full year 5-day entitlement');
  assert.equal(logic.allowance6.days,24,'Full year 6-day entitlement');
  assert.equal(logic.july.days,10,'Started in July, half year');
  assert.deepEqual(logic.holidays,['religious','religious'],'Both days identified');
+ assert.equal(logic.overlap.status,'VH','Paid holiday visible even when legacy GO override exists');
+ assert.equal(logic.overlap.used,0,'Holiday GO overlap must not consume annual leave');
  assert.ok(!logic.goDays.includes('2026-10-07')&&!logic.goDays.includes('2026-10-08'),'Holiday excluded from annual leave');
  assert.ok(logic.candidates.includes('2026-10-06'),'Unscanned working day proposed');
  assert.ok(!logic.candidates.includes('2026-10-07'),'Holiday not proposed as vacation');
