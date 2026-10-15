@@ -51,7 +51,7 @@ $('scanForm').addEventListener('submit',async e=>{
     at:date.toISOString(),barcode:code,source:'barcode',createdAt:serverTimestamp()};
   await setDoc(doc(db,'records','events','items',id),entry);
   lastScan={code,kind:mode,at:Date.now()};
-  history.unshift({name:worker.name||'Zaposleni',kind:mode,time:date.toLocaleString('bs-BA')});
+  history.unshift({name:worker.name||'Zaposleni',kind:mode,time:date.toLocaleString('bs-BA',{day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit',hourCycle:'h23'})});
   history=history.slice(0,20);renderHistory();
   $('location').textContent='Objekat: '+(worker.locationId==='m1'?'Market 1':worker.locationId==='m2'?'Market 2':worker.locationId);
   feedback('Potvrđeno u Firebase bazi: '+(worker.name||'Zaposleni')+' · '+(mode==='in'?'DOLAZAK':'ODLAZAK'),'ok');
