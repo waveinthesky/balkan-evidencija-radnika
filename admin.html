@@ -1195,7 +1195,7 @@ overview=function(){
   return '<tr><td>'+esc(r.e.name)+'</td><td>'+msg.map(esc).join('; ')+'</td><td><button class="btn small" data-day="'+date+'" data-emp="'+esc(r.e.id)+'" data-loc="'+esc(adminLoc)+'">Detalji</button></td></tr>';
  }).join('');
  const allRows=rows.map(r=>{
-  const leave=r.leave,available=leave.quota==null?'Pravo nije uneseno · GO: '+leave.used+' dana':'Pravo '+leave.quota+' · iskorišteno '+leave.used+' · ostalo '+leave.remaining+(leave.provisional?' *':'')+' dana';
+  const leave=r.leave,available=leave.quota==null?'Pravo nije uneseno · GO: '+leave.used+' dana':'Fond '+leave.quota+' · korišteno '+leave.used+' · slobodno do danas '+leave.remaining+(leave.provisional?' *':'')+' dana';
   const first=r.scan.starts[0];
   const shift=shiftInfo(r.e,date,adminLoc);
   return '<tr><td><b>'+esc(r.e.name)+'</b></td><td>'+esc(shift.label)+'<br><small>'+esc(shift.start||'Nije određeno')+'</small></td><td>'+esc(first?clock(first.at):'—')+'</td><td>'+r.todayData.late+' min</td><td>'+r.week.late+' min</td><td>'+r.month.late+' min</td><td>'+r.month.needsCheck+'</td><td>'+r.month.absent+'</td><td>'+available+'</td></tr>';
@@ -1731,10 +1731,10 @@ function agreedAnnualTodaySummary(e,year){
  const six=g?.weekdays?.length===6||(!g&&getSchedule(loc,ref)?.days?.length===6);
  const full=annualEntitlementSuggestion(e,y,six?6:5);
  const upTo=annualEntitlementSuggestion(e,y,six?6:5,current);
- const quota=g?.days??full.days;
+ const quota=g?.days??(e.leaveQuotaByYear?.[y]!=null?Number(e.leaveQuotaByYear[y]):full.days);
  const entitledMonths=Math.max(1,full.months);
  const accrued=y>Number(current.slice(0,4))?0:y<Number(current.slice(0,4))?quota:Math.round(quota*Math.min(upTo.months,entitledMonths)/entitledMonths);
- const carry=Number(e.leaveCarryByYear?.[y]??0),c=leaveCount(e.id,y);
+ const carry=Number(_annualPreviousYearLeaveSummary(e,y)?.carry??0),c=leaveCount(e.id,y);
  return{quota,accrued,months:upTo.months,carry,used:c.used,planned:c.upcoming,auto:c.autoDays||0,
  currentBalance:accrued+carry-c.used-c.upcoming,annualBalance:quota+carry-c.used-c.upcoming,confirmed:!!g};
 }
@@ -1756,6 +1756,16 @@ leavePage=function(){
  '<p class="smalltext">Mjesečni obračun je informativni presjek ('+d.months+' mjeseci), nije umanjenje zakonskog prava zaposlenog za cijelu godinu. U saldo su uključeni ranije uneseni preneseni dani ('+d.carry+'), iskorišteni dani i buduće rezervacije. Praznici, bolovanje, slobodni dani i današnji još nezavršeni dan ne troše godišnji. Negativno stanje upozorava da je iskorišteno više od obračunatog.</p></section>';
  return section+(enabled?original.replace(/<section class="panel"><h2>Provjera neoznačenih dana \/ godišnji odmor<\/h2>[\s\S]*?<\/section>/,''):original);
 };
+
+const _annualPreviousYearLeaveSummary=yearLeaveSummary;
+yearLeaveSummary=function(employee,year){
+ const old=_annualPreviousYearLeaveSummary(employee,year);
+ const now=agreedAnnualTodaySummary(employee,year);
+ return {...old,quota:old.quota??now.quota,used:now.used,planned:now.planned,
+ remaining:now.currentBalance,annualRemaining:now.annualBalance,autoLeave:now.auto,
+ provisional:old.provisional||!now.confirmed};
+};
+
 const _annualPriorDayPanel=dayPanel;
 dayPanel=function(employee,date,loc){
  const original=_annualPriorDayPanel(employee,date,loc);
@@ -1793,4 +1803,4 @@ window.BALKAN_V6={
  backup:()=>doExport(),
  defaultState:()=>defaultState()
 };
-</script><script type="module" src="./admin-firebase.js?v=20261015annualv2"></script></body></html>
+</script><script type="module" src="./admin-firebase.js?v=20261015annualv3"></script></body></html>
