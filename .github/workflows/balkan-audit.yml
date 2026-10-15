@@ -10,6 +10,13 @@ on:
       - 'index.html'
       - 'tests/**'
       - '.github/workflows/balkan-audit.yml'
+  pull_request:
+    branches: [main]
+    paths:
+      - 'admin.html'
+      - 'admin-firebase.js'
+      - 'tests/**'
+      - '.github/workflows/balkan-audit.yml'
   workflow_dispatch:
 jobs:
   test:
@@ -54,3 +61,4 @@ jobs:
           node tests/clock-24h.mjs
           node tests/sick-leave-open-ended.mjs
           node tests/vacation-law-cards.mjs
+          node tests/seasonal-schedule-annual-browser.mjs
