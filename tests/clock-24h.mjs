@@ -47,7 +47,7 @@ await worker.locator('button[type=submit]').click();
 await page.waitForFunction(()=>document.querySelector('#workerForm')===null);
 assert.equal(await page.evaluate(()=>window.BALKAN_V6.state().employees.find(e=>e.name==='Sati Testni')?.shiftStart),'14:30');
 await page.getByRole('button',{name:/Praznici i odsustva/}).first().click();
-await page.getByRole('button',{name:/Ručna evidencija/}).first().click();
+await page.getByRole('button',{name:/Evidencija radnika/}).first().click();
 const manual=page.locator('#manualForm');
 await manual.locator('select[name=type]').selectOption('IN');
 assert.equal(await manual.locator('input[name=time]').getAttribute('type'),'text','Manual time uses 24h HH:MM');
