@@ -1193,7 +1193,7 @@ overview=function(){
   return '<tr><td>'+esc(r.e.name)+'</td><td>'+msg.map(esc).join('; ')+'</td><td><button class="btn small" data-day="'+date+'" data-emp="'+esc(r.e.id)+'" data-loc="'+esc(adminLoc)+'">Detalji</button></td></tr>';
  }).join('');
  const allRows=rows.map(r=>{
-  const leave=r.leave,available=leave.remaining==null?'Unesi pravo':leave.remaining+' dana'+(leave.provisional?' *':'');
+  const leave=r.leave,available=leave.quota==null?'Pravo nije uneseno · GO: '+leave.used+' dana':'Pravo '+leave.quota+' · iskorišteno '+leave.used+' · ostalo '+leave.remaining+(leave.provisional?' *':'')+' dana';
   const first=r.scan.starts[0];
   const shift=shiftInfo(r.e,date,adminLoc);
   return '<tr><td><b>'+esc(r.e.name)+'</b></td><td>'+esc(shift.label)+'<br><small>'+esc(shift.start||'Nije određeno')+'</small></td><td>'+esc(first?clock(first.at):'—')+'</td><td>'+r.todayData.late+' min</td><td>'+r.week.late+' min</td><td>'+r.month.late+' min</td><td>'+r.month.needsCheck+'</td><td>'+r.month.absent+'</td><td>'+available+'</td></tr>';
@@ -1216,10 +1216,11 @@ workers=function(){
   const leave=yearLeaveSummary(e,year),used=leave.used,planned=leave.planned;
   const quota=leave.quota==null?'—':leave.quota,carry=(leave.carry||leave.provisional)?leave.carry+(leave.provisional?'*':''):'0';
   const rest=leave.remaining==null?'Unesi pravo':leave.remaining;
-  const markers=[e.isTest?'Testni':'',e.hidden?'Skriven':'',e.active===false?'Neaktivan':''].filter(Boolean).join(', ')||'Aktivan';
+  const markers=[e.isTest?'Testni':'',e.hidden?'Skriven':'',e.active===false?'Neaktivan':'',sickLeaveAt(e,today())?'Na bolovanju':''].filter(Boolean).join(', ')||'Aktivan';
   return '<tr><td><b>'+esc(e.name)+'</b><br><small>'+markers+'</small></td><td><code>'+esc(e.barcodeAssigned===false?'Kartica nije dodijeljena':e.barcode||'—')+'</code></td><td>'+esc(locName(e.defaultLocationId))+'</td>'+
   '<td>'+esc(shiftInfo(e,today(),e.defaultLocationId).label)+'</td><td>'+quota+'</td><td>'+carry+'</td><td>'+used+'</td><td>'+planned+'</td><td><b>'+rest+'</b></td>'+
-  '<td><div class="balkan-clickables"><button class="btn small" data-edit-worker="'+esc(e.id)+'">Uredi</button>'+
+  '<td><div class="balkan-clickables"><button class="btn small" data-edit-worker="'+esc(e.id)+'">Uredi</button>'+ 
+  '<button class="btn small" data-sick-worker="'+esc(e.id)+'">Bolovanje</button>'+
   '<button class="btn small" data-worker-history="'+esc(e.id)+'">Istorija</button>'+
   '<button class="btn small" data-worker-hide="'+esc(e.id)+'">'+(e.hidden?'Prikaži':'Sakrij')+'</button>'+
   '<button class="btn small danger" data-worker-delete="'+esc(e.id)+'">Obriši</button></div></td></tr>';
@@ -1228,7 +1229,7 @@ workers=function(){
  '<button class="btn primary" data-act="add-worker">+ Dodaj radnika</button><button class="btn" data-worker-toggle="1">'+(showAllStaff?'Sakrij neaktivne/testne':'Prikaži i neaktivne/testne')+'</button>')+
  '<section class="panel"><h2>Stanje godišnjeg odmora za '+year+'.</h2><div class="tablewrap"><table class="simpletable"><thead><tr><th>Radnik</th><th>Barkod</th><th>Objekat</th><th>Smjena</th><th>Pravo</th><th>Preneseno</th><th>Iskorišteno</th><th>Planirano</th><th>Preostalo</th><th>Opcije</th></tr></thead><tbody>'+
  (body||'<tr><td colspan="10">Nema zaposlenih u odabranom prikazu.</td></tr>')+'</tbody></table></div>'+
- '<p class="smalltext">Godišnji se računa iz oznaka GO samo na planiranim radnim danima, bez praznika. P = ručna oznaka i ne daje sate. Preostalo = pravo + preneseno − iskorišteno − planirano. Zvjezdica označava privremeni saldo iz arhive 2025. koji treba provjeriti. Zakonski broj dana unosi administrator prema individualnom rješenju.</p></section>';
+ '<p class="smalltext"><strong>Ako piše „Unesi pravo“, otvori Uredi za tog radnika i upiši pravo na godišnji za 2026. U kalendaru označavaj stvarno korištene dane kao GO.</strong> Godišnji se računa iz oznaka GO samo na planiranim radnim danima, bez praznika. P = ručna oznaka i ne daje sate. Preostalo = pravo + preneseno − iskorišteno − planirano. Zvjezdica označava privremeni saldo iz arhive 2025. koji treba provjeriti. Zakonski broj dana unosi administrator prema individualnom rješenju.</p></section>';
 };
 const _originalEnhancedReports=reports;
 reports=function(){
