@@ -52,3 +52,4 @@ jobs:
           node tests/lateness-color-dashboard.mjs
           node tests/clock-24h.mjs
           node tests/sick-leave-open-ended.mjs
+          node tests/vacation-law-cards.mjs
