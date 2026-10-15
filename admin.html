@@ -202,11 +202,11 @@ if(f.getAttribute('id')==='loginForm'){let h=await hashPass(d.password,S.admin.s
 if(!unlocked)throw Error('Prijavi se kao administrator.');
 if(f.getAttribute('id')==='workerForm'){d.shiftStart=read24Hour(d.shiftStart,'Početak smjene zaposlenog',true);let nm=d.name.trim(),barcode=d.barcode.trim(),hired=d.hiredAt;if(!nm||!barcode)throw Error('Nedostaju ime ili barkod.');if(S.employees.some(e=>e.barcode.toLowerCase()===barcode.toLowerCase()&&e.id!==d.id))throw Error('Barkod već pripada drugom radniku.');if(d.terminatedAt&&hired&&d.terminatedAt<hired)throw Error('Datum završetka ne može biti prije početka rada.');
  if(d.leaveQuota!==''&&(!Number.isInteger(Number(d.leaveQuota))||Number(d.leaveQuota)<0||Number(d.leaveQuota)>90))throw Error('Neispravan broj dana godišnjeg odmora.');
- if(d.leaveCarry!==''&&(!Number.isInteger(Number(d.leaveCarry))||Math.abs(Number(d.leaveCarry))>90))throw Error('Neispravan saldo godišnjeg odmora.');
+ if(d.leaveCarry!==''&&(!Number.isInteger(Number(d.leaveCarry))||Math.abs(Number(d.leaveCarry))>90))throw Error('Neispravan saldo godišnjeg odmora.');if(d.leaveCarryDeadline&&(!/^\d{4}-\d\d-\d\d$/.test(d.leaveCarryDeadline)||d.leaveCarryDeadline<String(new Date().getFullYear())+'-01-01'||d.leaveCarryDeadline>String(new Date().getFullYear()+2)+'-12-31'))throw Error('Neispravan datum važenja prenosa.');
  let e=S.employees.find(x=>x.id===d.id);if(e){let oldLoc=e.defaultLocationId;if(oldLoc!==d.defaultLocationId){e.assignments||=[{from:e.hiredAt||'1900-01-01',locationId:oldLoc}];e.assignments=e.assignments.filter(x=>x.from!==today());e.assignments.push({from:today(),locationId:d.defaultLocationId})}Object.assign(e,{name:nm,barcode,defaultLocationId:d.defaultLocationId,hiredAt:hired,terminatedAt:d.terminatedAt||'',active:!!f.elements.active.checked,defaultShift:d.defaultShift||'',attendanceFrom:d.attendanceFrom||today(),shiftStart:d.shiftStart||'',paidHours:Number(d.paidHours)||0,isTest:!!f.elements.isTest.checked,hidden:!!f.elements.hidden.checked,needsSetup:false,barcodeAssigned:true});
  e.leaveQuotaByYear||={};e.leaveCarryByYear||={};
  if(d.leaveQuota!=='')e.leaveQuotaByYear[new Date().getFullYear()]=Number(d.leaveQuota);else delete e.leaveQuotaByYear[new Date().getFullYear()];
- if(d.leaveCarry!=='')e.leaveCarryByYear[new Date().getFullYear()]=Number(d.leaveCarry);else delete e.leaveCarryByYear[new Date().getFullYear()]}else{S.employees.push({id:uid(),name:nm,barcode,defaultLocationId:d.defaultLocationId,assignments:[{from:hired,locationId:d.defaultLocationId}],hiredAt:hired,terminatedAt:d.terminatedAt||'',active:!!f.elements.active.checked,defaultShift:d.defaultShift||'',attendanceFrom:d.attendanceFrom||today(),shiftStart:d.shiftStart||'',paidHours:Number(d.paidHours)||0,isTest:!!f.elements.isTest.checked,hidden:!!f.elements.hidden.checked,leaveQuotaByYear:d.leaveQuota===''?{}:{[new Date().getFullYear()]:Number(d.leaveQuota)},leaveCarryByYear:d.leaveCarry===''?{}:{[new Date().getFullYear()]:Number(d.leaveCarry)},barcodeAssigned:true,createdAt:new Date().toISOString()})}audit(e?'Izmijenjen radnik':'Dodat radnik',nm);await save();closeModal();render();return}
+ if(d.leaveCarry!=='')e.leaveCarryByYear[new Date().getFullYear()]=Number(d.leaveCarry);else delete e.leaveCarryByYear[new Date().getFullYear()];e.leaveCarryDeadlineByYear||={};if(d.leaveCarryDeadline)e.leaveCarryDeadlineByYear[new Date().getFullYear()]=d.leaveCarryDeadline;else delete e.leaveCarryDeadlineByYear[new Date().getFullYear()]}else{S.employees.push({id:uid(),name:nm,barcode,defaultLocationId:d.defaultLocationId,assignments:[{from:hired,locationId:d.defaultLocationId}],hiredAt:hired,terminatedAt:d.terminatedAt||'',active:!!f.elements.active.checked,defaultShift:d.defaultShift||'',attendanceFrom:d.attendanceFrom||today(),shiftStart:d.shiftStart||'',paidHours:Number(d.paidHours)||0,isTest:!!f.elements.isTest.checked,hidden:!!f.elements.hidden.checked,leaveQuotaByYear:d.leaveQuota===''?{}:{[new Date().getFullYear()]:Number(d.leaveQuota)},leaveCarryByYear:d.leaveCarry===''?{}:{[new Date().getFullYear()]:Number(d.leaveCarry)},leaveCarryDeadlineByYear:d.leaveCarryDeadline?{[new Date().getFullYear()]:d.leaveCarryDeadline}:{},barcodeAssigned:true,createdAt:new Date().toISOString()})}audit(e?'Izmijenjen radnik':'Dodat radnik',nm);await save();closeModal();render();return}
 if(f.getAttribute('id')==='locationForm'){d.open=read24Hour(d.open,'Otvaranje');d.close=read24Hour(d.close,'Zatvaranje');for(const [field,label] of [['firstStart','Početak prve smjene'],['firstEnd','Završetak prve smjene'],['secondStart','Početak druge smjene'],['secondEnd','Završetak druge smjene']])d[field]=read24Hour(d[field],label,true);let l=S.locations.find(x=>x.id===d.id),days=[0,1,2,3,4,5,6].filter(i=>f.elements['day'+i].checked),sc={id:uid(),from:d.from,open:d.open,close:d.close,grace:Number(d.grace)||0,paidHours:Number(d.paidHours)||0,days,
  firstStart:d.firstStart||'',firstEnd:d.firstEnd||'',secondStart:d.secondStart||'',secondEnd:d.secondEnd||''};if(!days.length)throw Error('Izaberi barem jedan radni dan.');
  if(minutes(d.close)<=minutes(d.open))throw Error('Zatvaranje mora biti nakon otvaranja. Za noćne smjene to treba posebno proširenje.');
@@ -1785,6 +1785,102 @@ const _annualPriorGuide=settings;
 settings=function(){return _annualPriorGuide()
  .replace('N nije automatski godišnji.','N za protekli radni dan u popunjenom mjesecu računa se kao dogovoreni GO (od 2026) kada je opcija za radnika uključena. Izvorni podaci se ne brišu.')
  .replace('Program ne treba da automatski proglasi dan bez prijave neopravdanim izostankom ili godišnjim odmorom.','Automatski GO primjenjuje se samo na popunjene mjesece i dogovorenu opciju radnika. Pravne odluke i rješenja i dalje treba sačuvati.');
+};
+
+
+/* BALKAN – provjereni pregled godisnjeg odmora po radniku.
+   Nadogradnja na GitHub main 12866954191a65d9948086169164eb3e099a3f21.
+   Arhiva 2025. ostaje u postojecem history-2025.js; glavni Firebase tok je nepromijenjen.
+   Rok prenosa je informativna granica, osim kada je potvrđen zakonski izuzetak. */
+const _balkanLeaveSummaryBeforeCarryAudit=yearLeaveSummary;
+function balkanCarryAudit(employee,year,asOf=today()){
+ const y=Number(year),explicit=employee.leaveCarryByYear?.[y];
+ const archive=y===2026&&explicit==null?window.BALKAN_ARCHIVE?.getCarryover?.(employee.name):null;
+ const value=explicit==null?(archive?.balance??0):explicit;
+ const raw=Number.isFinite(Number(value))?Number(value):0;
+ const defaultDeadline=ymd(y,6,30);
+ const configured=employee.leaveCarryDeadlineByYear?.[y];
+ const deadline=/^\d{4}-\d\d-\d\d$/.test(String(configured||''))?configured:defaultDeadline;
+ const positive=Math.max(0,raw),negative=Math.min(0,raw);
+ const issued=(S.leaveDecisions||[]).filter(x=>x.empId===employee.id&&Number(x.year)===y&&x.status==='issued').flatMap(x=>x.days||[]);
+ const manual=manualLeaveDates(employee.id,y);
+ const automatic=agreedAnnualDates(employee,y);
+ const all=[...new Set([...issued,...manual,...automatic])].filter(date=>{
+  if(!/^\d{4}-\d\d-\d\d$/.test(date)||date.slice(0,4)!==String(y))return false;
+  const loc=assigned(employee,date);
+  if(!employeeAt(employee,date)||!loc||!isWorking(loc,date)||holiday(loc,date,employee)?.paid||sickLeaveAt(employee,date))return false;
+  if(S.events.some(v=>v.empId===employee.id&&v.kind==='in'&&dateOfEvent(v.at)===date))return false;
+  if(S.overrides.some(o=>o.empId===employee.id&&o.date===date&&o.status==='BO'))return false;
+  return true;
+ }).sort();
+ const spentOnCarry=Math.min(positive,all.filter(d=>d<=deadline).length);
+ const notSpent=positive-spentOnCarry;
+ const active=asOf<=deadline?notSpent:0;
+ const expired=asOf>deadline?notSpent:0;
+ return {raw,deadline,spentOnCarry,active,expired,negative,provisional:explicit==null&&!!archive,
+  known:explicit!=null||!!archive,source:explicit!=null?'ručni unos':archive?.source||'nema potvrđenog prenosa'};
+}
+function balkanLeaveDashboard(employee,year){
+ const existing=_balkanLeaveSummaryBeforeCarryAudit(employee,year);
+ const info=agreedAnnualTodaySummary(employee,year);
+ const carry=balkanCarryAudit(employee,year);
+ const used=existing.used,planned=existing.planned;
+ const correction=carry.spentOnCarry+carry.active+carry.negative;
+ const total=info.quota;
+ const accrued=info.accrued;
+ return {...existing,quota:total,accrued,used,planned,carry:carry.raw,
+  carryUsed:carry.spentOnCarry,carryActive:carry.active,carryExpired:carry.expired,
+  carryDeadline:carry.deadline,carrySource:carry.source,carryKnown:carry.known,
+  remaining:accrued+correction-used-planned,
+  annualRemaining:total+correction-used-planned,
+  provisional:carry.provisional||!info.confirmed&&employee.leaveQuotaByYear?.[year]==null,
+  rightConfirmed:!!leaveGrant(employee.id,Number(year))||employee.leaveQuotaByYear?.[year]!=null,
+  knownHire:!!employee.hiredAt};
+}
+yearLeaveSummary=function(employee,year){return balkanLeaveDashboard(employee,year)};
+
+const _balkanWorkerFormBeforeCarryDeadline=workerForm;
+workerForm=function(id){
+ _balkanWorkerFormBeforeCarryDeadline(id);
+ const f=document.getElementById('workerForm'),existing=S.employees.find(x=>x.id===id);
+ const field=f?.querySelector('input[name="leaveCarry"]')?.closest('.field');
+ if(!field)return;
+ const y=new Date().getFullYear();
+ const configured=existing?.leaveCarryDeadlineByYear?.[y];
+ const fallback=ymd(y,6,30);
+ const value=configured||fallback;
+ field.insertAdjacentHTML('beforeend',
+  '<label style="display:block;margin-top:10px">Važenje prenesenih dana do</label>'+
+  '<input name="leaveCarryDeadline" type="date" value="'+esc(value)+'" min="'+y+'-01-01" max="'+(y+2)+'-12-31">'+
+  '<small>Uobičajeni rok je 30. jun. Kasniji datum unesi samo za dokumentovani zakonski izuzetak (npr. odgovarajuće odsustvo). Negativan saldo je administrativna korekcija, a ne automatski dug radnika.</small>');
+};
+const _balkanWorkersBeforeAccruedTable=workers;
+workers=function(){
+ const original=_balkanWorkersBeforeAccruedTable();
+ const y=new Date().getFullYear(),todayStr=today();
+ const visible=S.employees.slice().filter(e=>showAllStaff||(!e.hidden&&!e.isTest&&e.active!==false)).sort((a,b)=>a.name.localeCompare(b.name,'bs'));
+ const fmt=v=>Number.isFinite(Number(v))?String(v):'—';
+ const rows=visible.map(e=>{
+  const d=yearLeaveSummary(e,y),status=d.rightConfirmed?'Potvrđen fond':'Procjena – potvrdi pravo';
+  const carryCell=(d.carry>0?'+':'')+fmt(d.carry)+(d.carrySource!=='ručni unos'?' *':'');
+  const transfer=d.carryActive>0?'<b>'+d.carryActive+'</b>':'0';
+  const warning=d.carryExpired>0?' · isteklo '+d.carryExpired:'';
+  return '<tr><td><b>'+esc(e.name)+'</b><br><small>'+esc(e.hiredAt||'Datum zaposlenja nije unesen')+'</small></td>'+
+   '<td>'+fmt(d.quota)+'</td><td><b>'+fmt(d.accrued)+'</b></td>'+
+   '<td>'+esc(carryCell)+'<br><small>Iz prenosa iskorišćeno: '+fmt(d.carryUsed)+'</small></td>'+
+   '<td>'+transfer+'<br><small>Rok '+esc(d.carryDeadline)+warning+'</small></td>'+
+   '<td>'+fmt(d.used)+'</td><td>'+fmt(d.planned)+'</td>'+
+   '<td><b class="'+(d.remaining<0?'bad':'')+'">'+fmt(d.remaining)+'</b></td>'+
+   '<td>'+fmt(d.annualRemaining)+'</td>'+
+   '<td><small>'+esc(status)+(d.carryKnown?'':' · prenos nije potvrđen')+'</small></td></tr>';
+ }).join('');
+ const panel='<section class="panel" id="balkanLiveLeaveSummary"><h2>Godišnji odmori – obračun do '+esc(todayStr)+'</h2>'+
+ '<p class="smalltext">Radnici se računaju ponovo pri svakom otvaranju: datum zaposlenja, godišnji fond, arhiva, iskorišćeni i planirani dani. Kod fonda od 24 dana informativno je 2 dana po obračunskom mjesecu. Pravo za cijelu godinu ostaje prikazano zasebno.</p>'+
+ '<div class="tablewrap"><table class="simpletable"><thead><tr><th>Radnik</th><th>Pravo '+y+'</th><th>Ostvareno do danas</th><th>Preneseno iz '+(y-1)+'</th><th>Još važi prenos</th><th>Iskorišćeno</th><th>Planirano</th><th>Saldo danas</th><th>Godišnji saldo</th><th>Provjera</th></tr></thead><tbody>'+
+ (rows||'<tr><td colspan="10">Nema radnika u ovom prikazu.</td></tr>')+'</tbody></table></div>'+
+ '<p class="smalltext">Saldo danas = ostvareno + važeći preostali prenos + dani već potrošeni iz prenosa − iskorišćeno − planirano ± negativna korekcija. Standardni rok prenosa je 30. jun, a kasniji rok unosi se u Uredi radnika samo kada postoji zakonski izuzetak. * = privremeni podatak iz arhive 2025. Potvrda fonda i prenosa je obavezna za službeni obračun; negativni saldo je upozorenje, ne automatska sankcija.</p></section>';
+ const pos=original.indexOf('<section class="panel">');
+ return pos>=0?original.slice(0,pos)+panel+original.slice(pos):original+panel;
 };
 
 // Firebase bootstrap only: the legacy interface is not activated before authentication.
