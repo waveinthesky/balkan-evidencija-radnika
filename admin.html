@@ -1390,6 +1390,11 @@ dayStatus=function(employee,date,location){
   return 'BO';
  return _statusBeforeSickLeave(employee,date,location);
 };
+const _tardinessBeforeSickLeave=tardiness;
+tardiness=function(employee,date,location){
+ if(sickLeaveAt(employee,date))return null;
+ return _tardinessBeforeSickLeave(employee,date,location);
+};
 const _attendanceBeforeSickLeave=attendanceSignal;
 attendanceSignal=function(employee,location,date){
  if(sickLeaveAt(employee,date))return null;
