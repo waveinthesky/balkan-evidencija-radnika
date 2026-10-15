@@ -62,3 +62,4 @@ jobs:
           node tests/sick-leave-open-ended.mjs
           node tests/vacation-law-cards.mjs
           node tests/seasonal-schedule-annual-browser.mjs
+          node tests/workers-leave-layout-browser.mjs
