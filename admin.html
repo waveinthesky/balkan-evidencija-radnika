@@ -1544,7 +1544,7 @@ function likelyLeaveReviewDays(employee,year){
   if(!employeeAt(employee,date)||!loc||!isWorking(loc,date))continue;
   if(holiday(loc,date,employee)||sickLeaveAt(employee,date))continue;
   if(!!existingLeaveDay(employee.id,date))continue;
-  if(dayStatus(employee,date,loc)!=='N')continue;
+  if(dayStatus(employee,date,loc)!=='N'&&!agreedAnnualCandidate(employee,date,loc))continue;
   if(evs(employee.id,loc,date).length)continue;
   if(!(enteredMonths.has(date.slice(0,7))||firstScanned.has(date.slice(0,7))||(employee.attendanceFrom&&employee.attendanceFrom<=date)))continue;
   results.push({date,locId:loc});
@@ -1559,7 +1559,7 @@ function reviewLeaveCandidates(){
  const rows=candidates.map(({date,locId})=>'<label class="weekday" style="width:100%;display:flex;align-items:center;gap:12px"><input type="checkbox" name="leaveDate" value="'+esc(date)+'" data-location="'+esc(locId)+'">'+esc(date.split('-').reverse().join('.'))+' · '+esc(locName(locId))+'</label>').join('');
  modal('Provjera dana bez prijave – '+employee.name,'<form id="balkanLeaveReviewForm" class="grid">'+
  '<input type="hidden" name="employeeId" value="'+esc(employee.id)+'"><input type="hidden" name="year" value="'+leaveYear+'">'+
- '<div class="note info"><b>Važno:</b> N (bez potvrđenog dolaska) NIJE dokaz godišnjeg odmora. Izaberi samo one datume za koje postoji stvarno odobrenje/plan ili rješenje. Program ne mijenja ostale N dane.</div>'+
+ '<div class="note info"><b>Važno:</b> Dan bez prijave ne dokazuje sam po sebi odobren godišnji. Izaberi dane za koje postoji dogovor i dokumentovan osnov. Automatski uračunati dani ne odbijaju se ponovo nakon potvrde.</div>'+
  '<div class="actionline"><button class="btn" type="button" data-review-select="all">Označi sve</button><button class="btn" type="button" data-review-select="none">Poništi izbor</button><span>'+candidates.length+' dana za provjeru</span></div>'+
  '<div class="tablewrap" style="max-height:330px;overflow:auto;padding:12px;display:grid;gap:4px">'+rows+'</div>'+
  '<div class="field"><label>Napomena / osnov odobrenja</label><textarea name="note" rows="2" required placeholder="Npr. rješenje broj..., naknadno utvrđena evidencija..."></textarea></div>'+
@@ -1572,7 +1572,7 @@ leavePage=function(){
  const suggested=annualEntitlementSuggestion(employee,leaveYear,leaveGrant(employee.id,leaveYear)?.weekdays?.length===6?6:5);
  const pending=likelyLeaveReviewDays(employee,leaveYear);
  return original+'<section class="panel"><h2>Provjera neoznačenih dana / godišnji odmor</h2>'+
- '<p><b>'+pending.length+' radnih dana</b> nema potvrđenu prijavu u popunjenim mjesecima. Ovo su samo <b>kandidati</b>, ne automatski iskorišten godišnji odmor. Ne mijenjamo nijedan postojeći zapis dok ih ne potvrdiš.</p>'+
+ '<p><b>'+pending.length+' radnih dana</b> nema potvrđenu prijavu u popunjenim mjesecima. Kada je uključen dogovoreni automatski godišnji, ovi datumi su već privremeno uračunati u saldo. Potvrdom se evidentiraju kao formalno odabrani GO, bez ponovnog odbijanja. Izvorne prijave se ne mijenjaju.</p>'+
  '<div class="actionline"><button class="btn primary" data-leave-review="1" '+(!pending.length?'disabled':'')+'>Pregledaj i potvrdi dane</button></div>'+
  '<p class="smalltext">Informativni obračun na osnovu datuma ugovora: '+suggested.days+' dana za '+suggested.months+' mjeseci u '+leaveYear+'. (minimum za punu godinu: '+suggested.base+'). Zaseban fond i dodatne dane potvrdi u „Odredi godišnji fond“.</p></section>';
 };
@@ -1607,7 +1607,8 @@ document.getElementById('modal').addEventListener('submit',async event=>{
  const candidates=likelyLeaveReviewDays(employee,year),valid=new Map(candidates.map(x=>[x.date,x.locId]));
  if(selected.some(d=>!valid.has(d))){alert('Podaci su se promijenili. Otvori ponovo listu za provjeru.');return}
  const g=leaveGrant(id,year),balance=leaveCount(id,year);
- if(g&&selected.length>balance.remaining){alert('Izabrano je '+selected.length+' dana, a u fondu preostaje '+balance.remaining+'. Provjeri godišnji fond i izbor dana.');return}
+ const additional=selected.filter(date=>!balance.autoDates?.includes(date)).length;
+ if(g&&additional>balance.remaining){alert('Izabrano je '+additional+' novih dana, a u fondu preostaje '+balance.remaining+'. Provjeri godišnji fond i izbor dana.');return}
  if(!confirm('Potvrditi '+selected.length+' radnih dana kao godišnji odmor za '+employee.name+'? Ova promjena biće sačuvana u Firebase i istoriji.'))return;
  for(const date of selected){
   const locId=valid.get(date);
@@ -1754,7 +1755,7 @@ leavePage=function(){
  (enabled?'Isključi automatski godišnji za radnika':'Uključi automatski godišnji za radnika')+'</button>'+
  '<span class="smalltext">Način evidencije: '+(enabled?'UKLJUČEN':'ISKLJUČEN')+'. Ručno označeni N ostaje N; samo prazna polja mogu automatski postati GO. Izvorne prijave ostaju sačuvane.</span></div>'+
  '<p class="smalltext">Mjesečni obračun je informativni presjek ('+d.months+' mjeseci), nije umanjenje zakonskog prava zaposlenog za cijelu godinu. U saldo su uključeni ranije uneseni preneseni dani ('+d.carry+'), iskorišteni dani i buduće rezervacije. Praznici, bolovanje, slobodni dani i današnji još nezavršeni dan ne troše godišnji. Negativno stanje upozorava da je iskorišteno više od obračunatog.</p></section>';
- return section+(enabled?original.replace(/<section class="panel"><h2>Provjera neoznačenih dana \/ godišnji odmor<\/h2>[\s\S]*?<\/section>/,''):original);
+ return section+original;
 };
 
 const _annualPreviousYearLeaveSummary=yearLeaveSummary;
@@ -1803,4 +1804,4 @@ window.BALKAN_V6={
  backup:()=>doExport(),
  defaultState:()=>defaultState()
 };
-</script><script type="module" src="./admin-firebase.js?v=20261015annualv4"></script></body></html>
+</script><script type="module" src="./admin-firebase.js?v=20261015annualv5"></script></body></html>
