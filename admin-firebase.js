@@ -31,6 +31,23 @@ function setAdminLoginMode(mode){
 document.getElementById('v6ModeEmail').addEventListener('click',()=>setAdminLoginMode('email'));
 document.getElementById('v6ModeBarcode').addEventListener('click',()=>setAdminLoginMode('barcode'));
 if(savedAdminEmail())emailInput.value=savedAdminEmail();
+
+function readinessSettings(){
+ const data=api.state()||{},today=new Date().toLocaleDateString('en-CA');
+ const active=(data.employees||[]).filter(e=>e.active===true&&(!e.hiredAt||e.hiredAt<=today)&&(!e.terminatedAt||e.terminatedAt>=today)&&!(e.inactiveBy2026===true&&today>='2026-01-01')&&!(e.notActiveFrom&&today>=e.notActiveFrom));
+ const missingCode=active.filter(e=>!e.barcode||e.barcodeAssigned===false||/^(NEPOSTAVLJENO|BEZ-KARTICE)-/.test(e.barcode));
+ const missingObject=active.filter(e=>!e.defaultLocationId&&!(e.assignments||[]).some(a=>a.locationId&&a.from<=today));
+ const missingShift=active.filter(e=>!e.shiftStart&&!Object.keys(e.shiftCalendar||{}).length);
+ const currentSchedules=(data.locations||[]).filter(l=>l.active!==false&&!(l.schedules||[]).some(sc=>sc.from<=today&&sc.open&&sc.close));
+ const item=(name,items)=>'<p><b>'+name+': '+items.length+'</b>'+ (items.length?'<span class="smalltext"> — '+items.map(e=>text(e.name)).join(', ')+'</span>':'')+'</p>';
+ return `<section class="panel"><h2>Provjera spremnosti za rad</h2>
+ <p>Trenutno aktivnih radnika: <b>${active.length}</b>. Status se računa iz učitanih podataka, ne garantuje da su Firebase sigurnosna pravila i skeniranje u marketima provjereni.</p>
+ ${item('Bez stvarnog barkoda',missingCode)}
+ ${item('Bez dodijeljenog objekta',missingObject)}
+ ${item('Bez početka smjene za obračun kašnjenja',missingShift)}
+ <p><b>Aktivni objekti bez radnog vremena: ${currentSchedules.length}</b></p>
+ <p class="smalltext"><b>Obavezan završni test:</b> nakon podešavanja kartica i objekata skeniraj testni DOLAZAK i ODLAZAK na računaru marketa, provjeri da je Firebase potvrdio obje radnje i da se tačni događaji vide u administraciji na drugom uređaju. Provjeri Firestore pravila; oznaka „server potvrđen“ dokazuje čitanje, ali ne i pravo zapisivanja sa kioska.</p></section>`;
+}
 function adminBarcodeSettings(){
  return `<section class="panel"><h2>Administratorska barkod kartica</h2>
  <p>Barkod može zamijeniti <b>kucanje e-maila</b>, ali je Firebase lozinka uvijek obavezna. Barkod nije tajna niti samostalni pristup administratoru.</p>
@@ -129,6 +146,7 @@ async function showApp(){
    .replace(/<section class="panel"><h2>Zaštita barkod kartica – Google Authenticator<\/h2>[\s\S]*?<\/section>/,''))
    +HIST.settings()
    +adminBarcodeSettings()
+   +readinessSettings()
    +programHelp()
    +`<section class="panel"><h2>Firebase – status</h2><div id="v6FirebaseStatus">${status()}</div><button class="btn" id="v6SignOut" type="button">Odjavi Firebase administratora</button><p class="smalltext">Nema vezivanja programa za računar. Skeniranje barkoda zahtijeva završnu serversku provjeru prije službene upotrebe.</p></section>`);
 
