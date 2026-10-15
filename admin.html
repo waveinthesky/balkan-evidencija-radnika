@@ -1016,7 +1016,18 @@ function shiftInfo(employee,date,locId){
  if(manual)return {start:manual,end:'',label:'Pojedinačna smjena'};
  if(selected==='custom')return {start:employee.shiftStart||'',end:'',label:employee.shiftStart?'Posebna smjena':'Posebna smjena nije podešena'};
  if(selected==='second')return {start:'',end:'',label:'Druga smjena nije podešena u objektu'};
- // Prazan odabir nasljedjuje objekt, a ne individualni zastarjeli sat iz prethodne sezone.
+ // Starije kartice: ako sacuvani sat odgovara nekadasnjem objektu ili smjeni,
+ // pratimo sezonu. Stvarno razliciti pojedinacni termini ostaju sacuvani.
+ if(!selected&&employee.shiftStart){
+  const old=S.locations.find(l=>l.id===location)?.schedules?.filter(x=>x.from<=date)||[];
+  if(old.some(x=>x.secondStart===employee.shiftStart)&&schedule?.secondStart)
+   return {start:schedule.secondStart,end:schedule.secondEnd||'',label:'Naslijedjena druga smjena'};
+  if(old.some(x=>x.firstStart===employee.shiftStart&&x.firstStart!==x.open)&&schedule?.firstStart)
+   return {start:schedule.firstStart,end:schedule.firstEnd||'',label:'Naslijedjena prva smjena'};
+  if(old.some(x=>x.open===employee.shiftStart||x.firstStart===employee.shiftStart&&x.firstStart===x.open)&&schedule?.open)
+   return {start:schedule.open,end:schedule.close||'',label:'Automatski · objekat'};
+  return {start:employee.shiftStart,end:'',label:'Ranije upisan poseban početak'};
+ }
  if(!selected&&schedule?.open)return {start:schedule.open,end:schedule.close||'',label:'Automatski · objekat'};
  return {start:'',end:'',label:'Radno vrijeme objekta nije podešeno'};
 }
