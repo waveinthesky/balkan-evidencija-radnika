@@ -516,7 +516,7 @@ function leaveDays(from,to,weekdays,excluded=[],empId=null){
  let days=[];for(let x=new Date(a);x<=b;x.setUTCDate(x.getUTCDate()+1)){
  const date=x.toISOString().slice(0,10);if(!weekdays.includes(x.getUTCDay())||excluded.includes(date))continue;
  // Praznik se automatski isključuje samo ako je unesen kao neradni dan za sve objekte.
- if(S.holidays.some(h=>h.date===date&&h.nonWorking!==false&&(!h.locationId||(empId&&h.locationId===assigned(S.employees.find(e=>e.id===empId),date)))))continue;
+ if(empId&&(()=>{const worker=S.employees.find(e=>e.id===empId);return worker&&!!holiday(assigned(worker,date),date,worker)?.paid;})())continue;
  days.push(date);
  }return days;
 }
@@ -531,7 +531,7 @@ function leaveCount(empId,year){
 }
 const v3DayStatus=dayStatus;
 dayStatus=function(e,date,locId){let o=override(e.id,date,locId);if(o)return v3DayStatus(e,date,locId);let original=v3DayStatus(e,date,locId);if(original==='P'||original==='RP'||original==='H'||original==='ND'&&date>today())return original;
- let d=existingLeaveDay(e.id,date);if(d && !(S.events.some(v=>v.empId===e.id&&dateOfEvent(v.at)===date&&v.kind==='in')) &&!S.holidays.some(h=>h.date===date&&(h.locationId===null||h.locationId===locId)&&h.nonWorking!==false))return 'GO';return original;};
+ let d=existingLeaveDay(e.id,date);if(d && !(S.events.some(v=>v.empId===e.id&&dateOfEvent(v.at)===date&&v.kind==='in')) &&!holiday(locId,date,e)?.paid)return 'GO';return original;};
 const v3Workers=workers;
 workers=function(){let content=v3Workers();return content.replaceAll('>Evidencija</button>','>Evidencija</button>') // preserve existing buttons
  .replace(/(<button class="btn small" data-worker-history="([^"]+)">Evidencija<\/button>)/g, '$1<button class="btn small" data-leave-emp="$2">Godišnji</button>');};
@@ -1116,25 +1116,23 @@ const _originalMonthEmployees=monthEmployees;
 monthEmployees=function(locId,y,m){
  return _originalMonthEmployees(locId,y,m).filter(e=>showAllStaff||(!e.hidden&&!e.isTest&&e.active!==false));
 };
+
 function yearLeaveSummary(e,year){
- const quotaRaw=e.leaveQuotaByYear?.[year],quota=quotaRaw==null?null:Number(quotaRaw);
+ const g=leaveGrant(e.id,year);
+ const quotaRaw=g?.days??e.leaveQuotaByYear?.[year],quota=quotaRaw==null?null:Number(quotaRaw);
  const carryRaw=e.leaveCarryByYear?.[year];
  const archiveCarry=year===2026&&carryRaw==null?window.BALKAN_ARCHIVE?.getCarryover?.(e.name):null;
  const carry=carryRaw==null?(archiveCarry?.balance??0):Number(carryRaw);
  const provisional=carryRaw==null&&!!archiveCarry;
- const yearLast=new Date(year,11,31).getDate(),todayValue=today();
- let used=0,planned=0,confirmedAbsences=0;
- for(let m=1;m<=12;m++){
-  for(let d=1;d<=new Date(year,m,0).getDate();d++){
-   const date=ymd(year,m,d),loc=assigned(e,date);
-   if(!employeeAt(e,date)||!loc)continue;
-   const status=override(e.id,date,loc)?.status;
-   if(status==='IA')confirmedAbsences++;
-   if(status!=='GO'||sickLeaveAt(e,date)||!isWorking(loc,date)||holiday(loc,date,e))continue;
-   if(date<=todayValue)used++;else planned++;
-  }
+ const official=leaveCount(e.id,year);
+ let used=official.used,planned=official.upcoming,confirmedAbsences=0;
+ for(let m=1;m<=12;m++)for(let d=1;d<=new Date(year,m,0).getDate();d++){
+  const date=ymd(year,m,d),loc=assigned(e,date);
+  if(!employeeAt(e,date)||!loc)continue;
+  if(override(e.id,date,loc)?.status==='IA')confirmedAbsences++;
  }
- return {quota,carry,provisional,used,planned,confirmedAbsences,remaining:quota==null?null:quota+carry-used-planned};
+ return {quota,carry,provisional,used,planned,confirmedAbsences,
+ remaining:quota==null?null:quota+carry-official.reserved};
 }
 function dateRange(from,to){
  const result=[];let d=localDate(from),last=localDate(to);
