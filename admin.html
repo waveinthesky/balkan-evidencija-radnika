@@ -1232,7 +1232,7 @@ workers=function(){
  '<button class="btn primary" data-act="add-worker">+ Dodaj radnika</button><button class="btn" data-worker-toggle="1">'+(showAllStaff?'Sakrij neaktivne/testne':'Prikaži i neaktivne/testne')+'</button>')+
  '<section class="panel"><h2>Stanje godišnjeg odmora za '+year+'.</h2><div class="tablewrap"><table class="simpletable"><thead><tr><th>Radnik</th><th>Barkod</th><th>Objekat</th><th>Smjena</th><th>Pravo</th><th>Preneseno</th><th>Iskorišteno</th><th>Planirano</th><th>Preostalo</th><th>Opcije</th></tr></thead><tbody>'+
  (body||'<tr><td colspan="10">Nema zaposlenih u odabranom prikazu.</td></tr>')+'</tbody></table></div>'+
- '<p class="smalltext"><strong>Ako piše „Unesi pravo“, otvori Uredi za tog radnika i upiši pravo na godišnji za 2026. U kalendaru označavaj stvarno korištene dane kao GO.</strong> Godišnji se računa iz oznaka GO samo na planiranim radnim danima, bez praznika. P = ručna oznaka i ne daje sate. Preostalo = pravo + preneseno − iskorišteno − planirano. Zvjezdica označava privremeni saldo iz arhive 2025. koji treba provjeriti. Zakonski broj dana unosi administrator prema individualnom rješenju.</p></section>';
+ '<p class="smalltext"><strong>Ako piše „Unesi pravo“, otvori Uredi za tog radnika i upiši pravo na godišnji za 2026. U kalendaru označavaj stvarno korištene dane kao GO.</strong> Godišnji se računa iz oznaka GO samo na planiranim radnim danima, bez praznika. P = ručna oznaka i ne daje sate. Preostalo uključuje važeći prenos, iskorišćene, planirane i automatski prepoznate GO dane za provjeru. Zvjezdica označava privremeni saldo iz arhive 2025. koji treba provjeriti. Zakonski broj dana unosi administrator prema individualnom rješenju.</p></section>';
 };
 const _originalEnhancedReports=reports;
 reports=function(){
@@ -1694,6 +1694,7 @@ function annualObservedMonth(employee,date){
 const _annualOriginalStatus=dayStatus;
 function agreedAnnualCandidate(employee,date,location){
  if(!employee||!location||!agreedAnnualAutoOn(employee)||date>=today()||Number(date.slice(0,4))<2026)return false;
+ if(!employee.attendanceFrom||date<employee.attendanceFrom)return false;
  if(!employeeAt(employee,date)||assigned(employee,date)!==location||!isWorking(location,date))return false;
  if(holiday(location,date,employee)||sickLeaveAt(employee,date)||existingLeaveDay(employee.id,date))return false;
  if(evs(employee.id,location,date).length)return false;
@@ -1727,17 +1728,38 @@ leaveCount=function(id,year){
  return {...prior,autoDates:dates,autoDays:automatic,used:prior.used+automatic,
  reserved:prior.reserved+automatic,remaining:prior.g?prior.g.days-prior.reserved-automatic:null};
 };
+// Informativni obračun završenih mjeseci rada, ne zamjenjuje zakonski srazmjerni obračun.
+function balkanCompletedServiceMonths(employee,year,until){
+ const y=Number(year),hi=String(employee?.hiredAt||''),lo=String(employee?.terminatedAt||'');
+ const start=hi&&hi>ymd(y,1,1)?hi:ymd(y,1,1);
+ let end=ymd(y,12,31);if(until&&until<end)end=until;if(lo&&lo<end)end=lo;
+ if(end<start)return 0;
+ const dateStart=new Date(start+'T12:00:00Z'),endAfter=new Date(end+'T12:00:00Z');
+ endAfter.setUTCDate(endAfter.getUTCDate()+1);
+ let result=0;
+ for(let n=1;n<=12;n++){
+  const target=new Date(Date.UTC(dateStart.getUTCFullYear(),dateStart.getUTCMonth()+n,1,12));
+  const monthLast=new Date(Date.UTC(target.getUTCFullYear(),target.getUTCMonth()+1,0)).getUTCDate();
+  target.setUTCDate(Math.min(dateStart.getUTCDate(),monthLast));
+  if(target<=endAfter)result=n;else break;
+ }
+ return result;
+}
 function agreedAnnualTodaySummary(e,year){
  const y=Number(year),g=leaveGrant(e.id,y),current=today();
  const ref=ymd(y,1,1),loc=assigned(e,ref)||e.defaultLocationId;
  const six=g?.weekdays?.length===6||(!g&&getSchedule(loc,ref)?.days?.length===6);
  const full=annualEntitlementSuggestion(e,y,six?6:5);
- const upTo=annualEntitlementSuggestion(e,y,six?6:5,current);
  const quota=g?.days??(e.leaveQuotaByYear?.[y]!=null?Number(e.leaveQuotaByYear[y]):full.days);
- const entitledMonths=Math.max(1,full.months);
- const accrued=y>Number(current.slice(0,4))?0:y<Number(current.slice(0,4))?quota:Math.round(quota*Math.min(upTo.months,entitledMonths)/entitledMonths);
+ const monthsNow=balkanCompletedServiceMonths(e,y,current);
+ const monthsInYear=balkanCompletedServiceMonths(e,y,ymd(y,12,31));
+ // Ako je godisnji fond vec srazmjerno utvrdjen (< punog minimuma), podijeli ga
+ // brojem mjeseci rada; puni fond 24/20 uvijek se dijeli sa 12 mjeseci.
+ const prorated=monthsInYear<12&&quota<full.base;
+ const monthlyRate=quota/(prorated&&monthsInYear?monthsInYear:12);
+ const accrued=y>Number(current.slice(0,4))?0:y<Number(current.slice(0,4))?quota:Math.min(quota,Math.round(monthlyRate*monthsNow));
  const transfer=balkanCarryAudit(e,y),carry=transfer.raw,usableCarry=transfer.spentOnCarry+transfer.active+transfer.negative,c=leaveCount(e.id,y);
- return{quota,accrued,months:upTo.months,carry,used:c.used,planned:c.upcoming,auto:c.autoDays||0,
+ return{quota,accrued,months:monthsNow,carry,used:c.used,planned:c.upcoming,auto:c.autoDays||0,
  currentBalance:accrued+usableCarry-c.used-c.upcoming,annualBalance:quota+usableCarry-c.used-c.upcoming,confirmed:!!g};
 }
 const _annualPriorPage=leavePage;
@@ -1869,16 +1891,16 @@ workers=function(){
    '<td>'+fmt(d.quota)+'</td><td><b>'+fmt(d.accrued)+'</b></td>'+
    '<td>'+esc(carryCell)+'<br><small>Iz prenosa iskorišćeno: '+fmt(d.carryUsed)+'</small></td>'+
    '<td>'+transfer+'<br><small>Rok '+esc(d.carryDeadline)+warning+'</small></td>'+
-   '<td>'+fmt(d.used)+'</td><td>'+fmt(d.planned)+'</td>'+
+   '<td>'+fmt(d.used)+'</td><td>'+fmt(d.autoLeave||0)+'</td><td>'+fmt(d.planned)+'</td>'+
    '<td><b class="'+(d.remaining<0?'bad':'')+'">'+fmt(d.remaining)+'</b></td>'+
    '<td>'+fmt(d.annualRemaining)+'</td>'+
    '<td><small>'+esc(status)+(d.carryKnown?'':' · prenos nije potvrđen')+'</small></td></tr>';
  }).join('');
  const panel='<section class="panel" id="balkanLiveLeaveSummary"><h2>Godišnji odmori – obračun do '+esc(todayStr)+'</h2>'+
- '<p class="smalltext">Radnici se računaju ponovo pri svakom otvaranju: datum zaposlenja, godišnji fond, arhiva, iskorišćeni i planirani dani. Kod fonda od 24 dana informativno je 2 dana po obračunskom mjesecu. Pravo za cijelu godinu ostaje prikazano zasebno.</p>'+
- '<div class="tablewrap"><table class="simpletable"><thead><tr><th>Radnik</th><th>Pravo '+y+'</th><th>Ostvareno do danas</th><th>Preneseno iz '+(y-1)+'</th><th>Još važi prenos</th><th>Iskorišćeno</th><th>Planirano</th><th>Saldo danas</th><th>Godišnji saldo</th><th>Provjera</th></tr></thead><tbody>'+
- (rows||'<tr><td colspan="10">Nema radnika u ovom prikazu.</td></tr>')+'</tbody></table></div>'+
- '<p class="smalltext">Saldo danas = ostvareno + važeći preostali prenos + dani već potrošeni iz prenosa − iskorišćeno − planirano ± negativna korekcija. Standardni rok prenosa je 30. jun, a kasniji rok unosi se u Uredi radnika samo kada postoji zakonski izuzetak. * = privremeni podatak iz arhive 2025. Potvrda fonda i prenosa je obavezna za službeni obračun; negativni saldo je upozorenje, ne automatska sankcija.</p></section>';
+ '<p class="smalltext">Radnici se preračunavaju pri svakom otvaranju. Za fond od 24 dana informativni presjek dodaje 2 dana nakon svakog završenog mjeseca rada. Ukupno zakonsko godišnje pravo ostaje prikazano zasebno. Dani bez prijave od početka barkod praćenja predlažu se kao godišnji u popunjenim mjesecima, uz mogućnost ispravke.</p>'+
+ '<div class="tablewrap"><table class="simpletable"><thead><tr><th>Radnik</th><th>Pravo '+y+'</th><th>Ostvareno do danas</th><th>Preneseno iz '+(y-1)+'</th><th>Još važi prenos</th><th>Iskorišćeno (ukupno)</th><th>Automatski GO (za provjeru)</th><th>Planirano</th><th>Saldo danas</th><th>Godišnji saldo</th><th>Provjera</th></tr></thead><tbody>'+
+ (rows||'<tr><td colspan="11">Nema radnika u ovom prikazu.</td></tr>')+'</tbody></table></div>'+
+ '<p class="smalltext">Saldo danas = ostvareno + važeći preostali prenos + već potrošeni dio prenosa − iskorišćeno (uključujući automatski GO za provjeru) − planirano ± negativna korekcija. Standardni rok prenosa je 30. jun, a kasniji rok unosi se u Uredi radnika samo kada postoji zakonski izuzetak. * = privremeni podatak iz arhive 2025. Potvrda fonda i prenosa je obavezna za službeni obračun; negativni saldo je upozorenje, ne automatska sankcija.</p></section>';
  const pos=original.indexOf('<section class="panel">');
  return pos>=0?original.slice(0,pos)+panel+original.slice(pos):original+panel;
 };
