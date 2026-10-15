@@ -12,4 +12,4 @@
 /* Reset starih BALKAN service-worker kopija koje prikazuju zastarjeli ekran. */
 if ('serviceWorker' in navigator) navigator.serviceWorker.getRegistrations().then(rs=>Promise.all(rs.filter(r=>r.scope.includes('/balkan-evidencija-radnika/')).map(r=>r.unregister()))).catch(()=>{});
 if ('caches' in window) caches.keys().then(names=>Promise.all(names.filter(n=>n.startsWith('balkan-firebase-')).map(n=>caches.delete(n)))).catch(()=>{});
-</script><script type="module" src="./kiosk.js?v=9.0.0"></script></body></html>
+</script><script type="module" src="./kiosk.js?v=20261015clock24"></script></body></html>
