@@ -28,7 +28,7 @@ await page.evaluate(()=>{
  window.BALKAN_V6.render();
 });
 assert.ok(await page.getByText('Kašnjenja u mjesecu').count(),'Dashboard has monthly late metric');
-const workerRow=page.locator('table tr').filter({hasText:'Smjenski Test'}).first();
+const workerRow=page.locator('section.panel').filter({has:page.getByRole('heading',{name:/Danas · sedmica/})}).locator('table tr').filter({hasText:'Smjenski Test'}).first();
 const rowText=await workerRow.innerText();
 assert.ok(rowText.includes('Druga smjena'),'Shift B correctly assigned');
 assert.ok(rowText.includes('15 min'),'15 minutes delay calculated for Shift B: '+rowText);
