@@ -1659,8 +1659,8 @@ const _workersWithAllCards=workers;
 workers=function(){
  const original=_workersWithAllCards();
  const eligible=printableWorkerCards().length;
- return original.replace('<section class="panel">',
- '<section class="panel"><div class="actionline" style="margin-bottom:12px">'+
+ return original.replace('<section class="panel" id="balkanWorkerManagement">',
+ '<section class="panel" id="balkanWorkerManagement"><div class="actionline" style="margin-bottom:12px">'+
  '<button class="btn primary" type="button" data-print-all-workers="1">⎙ Štampaj kartice za sve radnike ('+eligible+')</button>'+
  '<span class="smalltext">Svaka kartica ima ime i važeći barkod. Testne i kartice bez stvarnog koda ne štampamo.</span></div>')
  .replace(/(<button class="btn small" data-edit-worker="([^"]+)">Uredi<\/button>)/g,
