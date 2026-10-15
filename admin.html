@@ -1696,7 +1696,7 @@ function agreedAnnualCandidate(employee,date,location){
  if(holiday(location,date,employee)||sickLeaveAt(employee,date)||existingLeaveDay(employee.id,date))return false;
  if(evs(employee.id,location,date).length)return false;
  const code=override(employee.id,date,location)?.status;
- if(code&&code!=='N')return false;
+ if(code)return false;
  if(!annualObservedMonth(employee,date))return false;
  return _annualOriginalStatus(employee,date,location)==='N';
 }
@@ -1752,7 +1752,7 @@ leavePage=function(){
  '<p>Automatski prepoznatih dogovorenih dana bez prijave: <b>'+d.auto+'</b>.</p>'+
  '<div class="actionline"><button type="button" class="btn '+(enabled?'danger':'primary')+'" data-agreed-leave-toggle="'+esc(e.id)+'">'+
  (enabled?'Isključi automatski godišnji za radnika':'Uključi automatski godišnji za radnika')+'</button>'+
- '<span class="smalltext">Način evidencije: '+(enabled?'UKLJUČEN':'ISKLJUČEN')+'. Originalni N i skeniranja ostaju sačuvani.</span></div>'+
+ '<span class="smalltext">Način evidencije: '+(enabled?'UKLJUČEN':'ISKLJUČEN')+'. Ručno označeni N ostaje N; samo prazna polja mogu automatski postati GO. Izvorne prijave ostaju sačuvane.</span></div>'+
  '<p class="smalltext">Mjesečni obračun je informativni presjek ('+d.months+' mjeseci), nije umanjenje zakonskog prava zaposlenog za cijelu godinu. U saldo su uključeni ranije uneseni preneseni dani ('+d.carry+'), iskorišteni dani i buduće rezervacije. Praznici, bolovanje, slobodni dani i današnji još nezavršeni dan ne troše godišnji. Negativno stanje upozorava da je iskorišteno više od obračunatog.</p></section>';
  return section+(enabled?original.replace(/<section class="panel"><h2>Provjera neoznačenih dana \/ godišnji odmor<\/h2>[\s\S]*?<\/section>/,''):original);
 };
@@ -1803,4 +1803,4 @@ window.BALKAN_V6={
  backup:()=>doExport(),
  defaultState:()=>defaultState()
 };
-</script><script type="module" src="./admin-firebase.js?v=20261015annualv3"></script></body></html>
+</script><script type="module" src="./admin-firebase.js?v=20261015annualv4"></script></body></html>
