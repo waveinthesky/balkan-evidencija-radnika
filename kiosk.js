@@ -71,6 +71,20 @@ function markRecent(code,kind,at){
  try{localStorage.setItem(RECENT_KEY,JSON.stringify(lastScan))}catch{}
 }
 function manualReview(err){return ['invalid-card','invalid-assignment'].includes(err?.code)}
+function boundedUpload(sender,item){
+ return new Promise((resolve,reject)=>{
+  let finished=false;
+  const done=(error,value)=>{
+   if(finished)return;finished=true;
+   clearTimeout(timeout);window.removeEventListener('offline',onOffline);
+   if(error)reject(error);else resolve(value);
+  };
+  const onOffline=()=>done(new Error('Internet je nestao tokom slanja; zapis ostaje lokalno.'));
+  const timeout=setTimeout(()=>done(new Error('Server nije potvrdio upis na vrijeme; zapis ostaje lokalno.')),12000);
+  window.addEventListener('offline',onOffline,{once:true});
+  Promise.resolve().then(()=>sender.sendQueuedScan(item)).then(value=>done(null,value),error=>done(error));
+ });
+}
 function describe(err){
  if(err?.code==='permission-denied')return 'Firebase odbija upis. Provjeri sigurnosna pravila; lokalni zapis je sačuvan.';
  return String(err?.message||err||'Nepoznata greška');
@@ -79,7 +93,7 @@ function syncQueue(includeReview=false){
  if(flushing)return flushing;
  if(!navigator.onLine){statusConnection();return Promise.resolve()}
  flushing=(async()=>{
-  let sent=0,needsReview=0,failed='';
+  let sent=0,needsReview=0,failed='',lastConfirmed=null;
   $('queueRetry').disabled=true;
   try{
    const list=readQueue();
@@ -91,13 +105,13 @@ function syncQueue(includeReview=false){
     let current=readQueue().find(x=>x.id===item.id);
     if(!current||current.flag==='review'&&!includeReview)continue;
     try{
-     const confirmed=await sender.sendQueuedScan(current);
+     const confirmed=await boundedUpload(sender,current);
      const other=readQueue().filter(x=>x.id!==current.id);
      saveQueue(other);
      history.unshift({name:confirmed.name,kind:confirmed.kind,time:formatWhen(confirmed.at)});
      history=history.slice(0,20);
      $('location').textContent='Objekat: '+(confirmed.locationId==='m1'?'Market 1':confirmed.locationId==='m2'?'Market 2':confirmed.locationId);
-     sent++;
+     sent++;lastConfirmed=confirmed;
     }catch(err){
      if(manualReview(err)){
       const items=readQueue(),record=items.find(x=>x.id===current.id);
@@ -117,7 +131,7 @@ function syncQueue(includeReview=false){
   }else if(review||needsReview){
    feedback('Zapisi za provjeru: '+review+'. Ništa nije izbrisano. Provjeri kartice i pokušaj ponovo.','bad');
   }else if(sent){
-   feedback('Potvrđeno u Firebase bazi: poslano '+sent+' '+(sent===1?'skeniranje':'skeniranja')+'.','ok');
+   feedback('Potvrđeno u Firebase bazi: '+(sent===1?lastConfirmed.name+' · '+(lastConfirmed.kind==='in'?'DOLAZAK':'ODLAZAK'):'poslano '+sent+' skeniranja')+'.','ok');
   }else if(count){
    feedback('Lokalno sačuvano: '+count+' zapisa čeka slanje.');
   }
@@ -150,7 +164,7 @@ $('scanForm').addEventListener('submit',async e=>{
   feedback('Sačuvano NA OVOM RAČUNARU: '+(selectedMode==='in'?'DOLAZAK':'ODLAZAK')+
    ' u '+formatWhen(item.at)+'. '+(navigator.onLine?'Šalje se u Firebase…':'Čeka povratak interneta.')+
    ' Nije još potvrđeno u Firebase bazi.');
-  if(navigator.onLine)await syncQueue();
+  if(navigator.onLine)void syncQueue();
  }catch(err){
   feedback('NIJE SAČUVANO: '+describe(err)+' Koristi rezervnu ručnu evidenciju!','bad');
  }finally{busy=false;$('barcode').disabled=false;showQueue();focus()}
