@@ -7,6 +7,8 @@ on:
       - 'admin-firebase.js'
       - 'history-2025.js'
       - 'kiosk.js'
+      - 'kiosk-firebase.js'
+      - 'sw.js'
       - 'index.html'
       - 'tests/**'
       - '.github/workflows/balkan-audit.yml'
@@ -15,6 +17,10 @@ on:
     paths:
       - 'admin.html'
       - 'admin-firebase.js'
+      - 'kiosk.js'
+      - 'kiosk-firebase.js'
+      - 'index.html'
+      - 'sw.js'
       - 'tests/**'
       - '.github/workflows/balkan-audit.yml'
   workflow_dispatch:
@@ -32,6 +38,8 @@ jobs:
           node --check --input-type=module < admin-firebase.js
           node --check --input-type=module < history-2025.js
           node --check --input-type=module < kiosk.js
+          node --check --input-type=module < kiosk-firebase.js
+          node --check sw.js
           node --check --input-type=module < firebase-shared.js
           node --check --input-type=module < firebase-config.js
           python3 - <<'PY'
