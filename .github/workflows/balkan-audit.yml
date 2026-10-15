@@ -51,3 +51,4 @@ jobs:
           node tests/shifts-leave-dashboard.mjs
           node tests/lateness-color-dashboard.mjs
           node tests/clock-24h.mjs
+          node tests/sick-leave-open-ended.mjs
