@@ -1614,6 +1614,39 @@ document.getElementById('modal').addEventListener('submit',async event=>{
  try{await save();closeModal();render()}catch(err){alert('Čuvanje nije potvrđeno: '+err.message)}
 },true);
 
+
+function printableWorkerCards(){
+ return (S.employees||[]).filter(e=>!e.isTest&&!e.hidden&&e.active!==false&&e.barcode&&e.barcodeAssigned!==false&&!/^(NEPOSTAVLJENO|BEZ-KARTICE)-/i.test(e.barcode)&&/^[0-9A-Z .\-$\/+%]+$/i.test(e.barcode));
+}
+function printAllWorkerCards(){
+ const employees=printableWorkerCards();
+ if(!employees.length){alert('Nema važećih barkod kartica za zajedničku štampu. Prvo dodaj barkod radniku.');return}
+ const cards=employees.map(e=>{
+  const code=String(e.barcode).toUpperCase(),svg=makeCode39(code);
+  return '<article class="card"><div class="company">BALKAN</div><div class="employee">'+esc(e.name)+'</div><div class="barcode">'+svg+'</div><div class="code">'+esc(code)+'</div><small>Kartica zaposlenog · Evidencija radnog vremena</small></article>';
+ }).join('');
+ const popup=window.open('','_blank','width=950,height=700');
+ if(!popup){alert('Dozvoli otvaranje prozora za štampu.');return}
+ popup.document.write('<!doctype html><html lang="bs"><head><meta charset="utf-8"><title>BALKAN – sve barkod kartice</title>'+
+ '<style>@page{size:A4 portrait;margin:12mm}body{font-family:Arial,sans-serif;margin:0;padding:10px;color:#16253b}.cards{display:grid;grid-template-columns:1fr 1fr;gap:10mm 8mm}.card{border:1px dashed #97a4b8;border-radius:4px;text-align:center;padding:10px;page-break-inside:avoid;break-inside:avoid;min-width:0;overflow:hidden}.company{font-size:20px;font-weight:bold;letter-spacing:1px}.employee{font-size:16px;font-weight:bold;margin:7px 0}.barcode svg{display:block;width:100%;height:65px}.code{font-family:monospace;font-size:14px;font-weight:bold;letter-spacing:1px;overflow-wrap:anywhere}.card small{display:block;font-size:9px;margin-top:5px}@media screen{body{max-width:900px;margin:20px auto}.card{border-style:solid}}</style></head><body>'+
+ '<div class="cards">'+cards+'</div><script>window.addEventListener("load",()=>setTimeout(()=>window.print(),200))<\/script></body></html>');
+ popup.document.close();popup.focus();
+}
+const _workersWithAllCards=workers;
+workers=function(){
+ const original=_workersWithAllCards();
+ const eligible=printableWorkerCards().length;
+ return original.replace('<div class="panel">',
+ '<div class="panel"><div class="actionline" style="margin-bottom:12px">'+
+ '<button class="btn primary" type="button" data-print-all-workers="1">⎙ Štampaj kartice za sve radnike ('+eligible+')</button>'+
+ '<span class="smalltext">Svaka kartica ima ime i važeći barkod. Testne i kartice bez stvarnog koda ne štampamo.</span></div>');
+};
+document.getElementById('app').addEventListener('click',event=>{
+ if(!event.target.closest('[data-print-all-workers]'))return;
+ event.preventDefault();event.stopImmediatePropagation();
+ if(unlocked)printAllWorkerCards();
+},true);
+
 // Firebase bootstrap only: the legacy interface is not activated before authentication.
 window.BALKAN_V6={
  boot:async()=>{await init(); if(!S.admin)S.admin={username:'Firebase administrator'};unlocked=true;route='pregled';S._sync={url:'',token:'',deviceId:S._sync?.deviceId||uid(),seeded:true,lastAt:null};S._pending=[];render()},
