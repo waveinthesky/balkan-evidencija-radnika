@@ -39,7 +39,7 @@ try{
  await row.locator('[data-edit-worker]').click();
  assert.equal(await page.locator('#workerForm').count(),1,'Edit opens');
  assert.equal(await page.locator('#workerForm input[name=barcode]').inputValue(),'LAYOUT100');
- await page.locator('#modal [data-act="close-modal"]').click();
+ await page.locator('#modal [data-act="close-modal"]').first().click();
  await row.locator('[data-leave-emp]').click();
  assert.equal(await page.locator('#balkanWorkerManagement').count(),0,'Management is not in leave page');
  assert.equal(await page.locator('#balkanLiveLeaveSummary').count(),1,'Annual table moved to leave page');
