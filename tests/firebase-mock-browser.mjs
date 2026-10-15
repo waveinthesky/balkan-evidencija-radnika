@@ -7,7 +7,7 @@ const auth=`
 let a={currentUser:{uid:'jWTYPv8PhIb8xUbo0Ra0RtrKVf82',isAnonymous:false}};
 export function getAuth(){return a}
 export function onAuthStateChanged(auth,cb){setTimeout(()=>cb(auth.currentUser),25);return()=>{}}
-export async function signInWithEmailAndPassword(){return{user:a.currentUser}}
+export async function signInWithEmailAndPassword(_,email,password){globalThis.__lastAdminAuthCall={email,password};return{user:a.currentUser}}
 export async function signInAnonymously(){a.currentUser={uid:'anonymous-test-1',isAnonymous:true};return{user:a.currentUser}}
 export async function signOut(){a.currentUser=null}
 `;
@@ -53,6 +53,34 @@ await page.getByRole('button',{name:/Postavke/}).first().click();
 assert.ok(await page.getByText('Uputstvo za korištenje programa BALKAN').count(),'Settings help shown');
 assert.ok(await page.getByText('Firebase – status').count(),'Firebase status shown');
 assert.ok(await page.getByText('Uvoz arhive 2025.').count(),'Archive importer shown');
+
+const printedCard=await page.locator('#v6AdminBarcodeCard').innerText();
+const code=printedCard.match(/BKADM[A-Z0-9]+/)?.[0];
+assert.ok(code&&code.length>12,'Valid admin barcode generated');
+assert.equal(await page.locator('#v6AdminBarcodeCard svg').count(),1,'Printable barcode SVG');
+await page.evaluate(()=>{
+ localStorage.setItem('balkan_admin_email_jWTYPv8PhIb8xUbo0Ra0RtrKVf82','admin-audit@example.org');
+ document.getElementById('v6Login').style.display='grid';
+ document.getElementById('v6LoginForm').style.display='block';
+});
+await page.locator('#v6ModeBarcode').click();
+assert.equal(await page.locator('#v6BarcodeLabel').isVisible(),true,'Barcode field visible');
+assert.equal(await page.locator('#v6EmailLabel').isVisible(),false,'Email field hidden in barcode mode');
+await page.locator('#v6AdminBarcode').fill('WRONG-CODE');
+await page.locator('#v6Password').fill('TestPasswordNotReal');
+await page.locator('#v6LoginForm button[type=submit]').click();
+assert.ok((await page.locator('#v6AuthMessage').innerText()).includes('Neprepoznat'),'Wrong barcode blocked');
+assert.equal(await page.evaluate(()=>globalThis.__lastAdminAuthCall||null),null,'Bad barcode never calls Firebase auth');
+await page.locator('#v6AdminBarcode').fill(code);
+await page.locator('#v6LoginForm button[type=submit]').click();
+await page.waitForFunction(()=>!!globalThis.__lastAdminAuthCall);
+const recorded=await page.evaluate(()=>globalThis.__lastAdminAuthCall);
+assert.equal(recorded.email,'admin-audit@example.org','Correct Firebase email selected by barcode');
+assert.equal(recorded.password,'TestPasswordNotReal','Firebase password still mandatory');
+await page.locator('#v6ModeEmail').click();
+assert.equal(await page.locator('#v6EmailLabel').isVisible(),true,'Original email mode retained');
+await page.locator('#v6Login').evaluate(el=>el.style.display='none');
+console.log('PASS Admin barcode login: printable Code39, reject wrong code, require same password, preserve email login');
 await page.getByRole('button',{name:/Arhiva 2025/}).first().click();
 assert.ok(await page.getByText('Još nije uvezena u Firebase').count(),'Absent archive handled');
 console.log('PASS Firebase mock browser: actual admin-firebase integration, remote verification indicator, archive fallback, Settings help');
