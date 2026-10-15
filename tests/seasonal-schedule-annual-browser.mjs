@@ -78,7 +78,7 @@ try{
  assert.ok(await page.locator('#balkanAnnualBulk').count(),'Bulk annual grant shown');
  assert.equal(await page.locator('[data-balkan-annual-bulk]').isDisabled(),false);
  await page.locator('[data-balkan-annual-bulk]').click();
- await page.waitForFunction(()=>window.BALKAN_V6.state().leaveGrants.filter(x=>x.source==='batch-confirmed').length===5);
+ await page.waitForFunction(()=>window.BALKAN_V6.state().leaveGrants.filter(x=>x.source==='batch-confirmed').length===5 && document.querySelector('[data-balkan-annual-bulk]')?.disabled===true);
  const grants=await page.evaluate(()=>Object.fromEntries(window.BALKAN_V6.state().leaveGrants.map(x=>[x.empId,x.days])));
  for(const id of ['auto','first','second','custom'])assert.equal(grants[id],24,id+' six day fund');
  assert.equal(grants.five,20,'Five day weekly fund');
