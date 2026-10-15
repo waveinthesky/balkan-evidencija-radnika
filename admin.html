@@ -1216,8 +1216,9 @@ workers=function(){
  const year=new Date().getFullYear();
  const body=workers.map(e=>{
   const leave=yearLeaveSummary(e,year),used=leave.used,planned=leave.planned;
-  const quota=leave.quota==null?'—':leave.quota,carry=(leave.carry||leave.provisional)?leave.carry+(leave.provisional?'*':''):'0';
-  const rest=leave.remaining==null?'Unesi pravo':leave.remaining;
+  const needsConfirmation=!leaveGrant(e.id,year)&&e.leaveQuotaByYear?.[year]==null;
+  const quota=leave.quota==null?'—':needsConfirmation?leave.quota+' (procjena)':leave.quota,carry=(leave.carry||leave.provisional)?leave.carry+(leave.provisional?'*':''):'0';
+  const rest=leave.remaining==null?'Unesi pravo':needsConfirmation?leave.remaining+' · Unesi pravo':leave.remaining;
   const markers=[e.isTest?'Testni':'',e.hidden?'Skriven':'',e.active===false?'Neaktivan':'',sickLeaveAt(e,today())?'Na bolovanju':''].filter(Boolean).join(', ')||'Aktivan';
   return '<tr><td><b>'+esc(e.name)+'</b><br><small>'+markers+'</small></td><td><code>'+esc(e.barcodeAssigned===false?'Kartica nije dodijeljena':e.barcode||'—')+'</code></td><td>'+esc(locName(e.defaultLocationId))+'</td>'+
   '<td>'+esc(shiftInfo(e,today(),e.defaultLocationId).label)+'</td><td>'+quota+'</td><td>'+carry+'</td><td>'+used+'</td><td>'+planned+'</td><td><b>'+rest+'</b></td>'+
@@ -1536,7 +1537,7 @@ function likelyLeaveReviewDays(employee,year){
  const results=[];
  if(!employee||!Number.isInteger(Number(year)))return results;
  const y=Number(year),endDate=ymd(y,12,31)<today()?ymd(y,12,31):today();
- const enteredMonths=new Set((S.overrides||[]).filter(o=>o.empId===employee.id&&['P','N','GO'].includes(o.status)).map(o=>o.date.slice(0,7)));
+ const enteredMonths=new Set((S.overrides||[]).filter(o=>o.empId===employee.id&&['P','N'].includes(o.status)).map(o=>o.date.slice(0,7)));
  const firstScanned=new Set((S.events||[]).filter(v=>v.empId===employee.id&&v.kind==='in').map(v=>dateOfEvent(v.at).slice(0,7)));
  for(let m=1;m<=12;m++)for(let day=1;day<=new Date(y,m,0).getDate();day++){
   const date=ymd(y,m,day);if(date>endDate)continue;
@@ -1804,4 +1805,4 @@ window.BALKAN_V6={
  backup:()=>doExport(),
  defaultState:()=>defaultState()
 };
-</script><script type="module" src="./admin-firebase.js?v=20261015annualv5"></script></body></html>
+</script><script type="module" src="./admin-firebase.js?v=20261015annualv6"></script></body></html>
