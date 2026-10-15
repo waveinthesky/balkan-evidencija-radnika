@@ -1229,27 +1229,27 @@ overview=function(){
  '<p class="smalltext">* Samo od datuma početka barkod evidencije, bez neradnih dana, praznika i prijavljenih odsustava. Potrebna provjera administratora. Stanje godišnjeg s oznakom * koristi privremeni saldo iz arhive 2025. koji treba potvrditi.</p></section>';
 };
 workers=function(){
- const workers=S.employees.slice().filter(e=>showAllStaff||(!e.hidden&&!e.isTest&&e.active!==false)).sort((a,b)=>a.name.localeCompare(b.name,'bs'));
- const year=new Date().getFullYear();
- const body=workers.map(e=>{
-  const leave=yearLeaveSummary(e,year),used=leave.used,planned=leave.planned;
-  const needsConfirmation=!leaveGrant(e.id,year)&&e.leaveQuotaByYear?.[year]==null;
-  const quota=leave.quota==null?'—':needsConfirmation?leave.quota+' (procjena)':leave.quota,carry=(leave.carry||leave.provisional)?leave.carry+(leave.provisional?'*':''):'0';
-  const rest=leave.remaining==null?'Unesi pravo':needsConfirmation?leave.remaining+' · Unesi pravo':leave.remaining;
-  const markers=[e.isTest?'Testni':'',e.hidden?'Skriven':'',e.active===false?'Neaktivan':'',sickLeaveAt(e,today())?'Na bolovanju':''].filter(Boolean).join(', ')||'Aktivan';
-  return '<tr><td><b>'+esc(e.name)+'</b><br><small>'+markers+'</small></td><td><code>'+esc(e.barcodeAssigned===false?'Kartica nije dodijeljena':e.barcode||'—')+'</code></td><td>'+esc(locName(e.defaultLocationId))+'</td>'+
-  '<td>'+esc(shiftInfo(e,today(),e.defaultLocationId).label)+'</td><td>'+quota+'</td><td>'+carry+'</td><td>'+used+'</td><td>'+planned+'</td><td><b>'+rest+'</b></td>'+
-  '<td><div class="balkan-clickables"><button class="btn small" data-edit-worker="'+esc(e.id)+'">Uredi</button>'+ 
-  '<button class="btn small" data-sick-worker="'+esc(e.id)+'">Bolovanje</button>'+
-  '<button class="btn small" data-worker-history="'+esc(e.id)+'">Istorija</button>'+
-  '<button class="btn small" data-worker-hide="'+esc(e.id)+'">'+(e.hidden?'Prikaži':'Sakrij')+'</button>'+
-  '<button class="btn small danger" data-worker-delete="'+esc(e.id)+'">Obriši</button></div></td></tr>';
+ const visible=S.employees.slice().filter(e=>showAllStaff||(!e.hidden&&!e.isTest&&e.active!==false)).sort((a,b)=>a.name.localeCompare(b.name,'bs'));
+ const rows=visible.map(e=>{
+  const status=[e.isTest?'Testni':'',e.hidden?'Skriven':'',e.active===false?'Neaktivan':'',sickLeaveAt(e,today())?'Na bolovanju':''].filter(Boolean).join(', ')||'Aktivan';
+  const period=esc(e.hiredAt||'Datum zaposlenja nije unesen')+(e.terminatedAt?' → '+esc(e.terminatedAt):'');
+  return '<tr><td><b>'+esc(e.name)+'</b><br><small>'+esc(status)+'</small></td>'+
+   '<td><code>'+esc(e.barcodeAssigned===false?'Kartica nije dodijeljena':e.barcode||'—')+'</code></td>'+
+   '<td>'+esc(locName(e.defaultLocationId))+'</td>'+
+   '<td>'+esc(shiftInfo(e,today(),e.defaultLocationId).label)+'</td>'+
+   '<td><small>'+period+'</small></td>'+
+   '<td><div class="balkan-clickables"><button class="btn small" data-edit-worker="'+esc(e.id)+'">Uredi</button>'+
+   '<button class="btn small" data-sick-worker="'+esc(e.id)+'">Bolovanje</button>'+
+   '<button class="btn small" data-worker-history="'+esc(e.id)+'">Istorija</button>'+
+   '<button class="btn small" data-worker-hide="'+esc(e.id)+'">'+(e.hidden?'Prikaži':'Sakrij')+'</button>'+
+   '<button class="btn small danger" data-worker-delete="'+esc(e.id)+'">Obriši</button></div></td></tr>';
  }).join('');
- return pageTitle('Radnici i godišnji odmori','Skriveni, testni i neaktivni radnici ostaju sačuvani za istoriju',
- '<button class="btn primary" data-act="add-worker">+ Dodaj radnika</button><button class="btn" data-worker-toggle="1">'+(showAllStaff?'Sakrij neaktivne/testne':'Prikaži i neaktivne/testne')+'</button>')+
- '<section class="panel"><h2>Stanje godišnjeg odmora za '+year+'.</h2><div class="tablewrap"><table class="simpletable"><thead><tr><th>Radnik</th><th>Barkod</th><th>Objekat</th><th>Smjena</th><th>Pravo</th><th>Preneseno</th><th>Iskorišteno</th><th>Planirano</th><th>Preostalo</th><th>Opcije</th></tr></thead><tbody>'+
- (body||'<tr><td colspan="10">Nema zaposlenih u odabranom prikazu.</td></tr>')+'</tbody></table></div>'+
- '<p class="smalltext"><strong>Ako piše „Unesi pravo“, otvori Uredi za tog radnika i upiši pravo na godišnji za 2026. U kalendaru označavaj stvarno korištene dane kao GO.</strong> Godišnji se računa iz oznaka GO samo na planiranim radnim danima, bez praznika. P = ručna oznaka i ne daje sate. Preostalo uključuje važeći prenos, iskorišćene, planirane i automatski prepoznate GO dane za provjeru. Zvjezdica označava privremeni saldo iz arhive 2025. koji treba provjeriti. Zakonski broj dana unosi administrator prema individualnom rješenju.</p></section>';
+ return pageTitle('Radnici','Upravljanje radnicima, barkod karticama i dodijeljenim smjenama',
+  '<button class="btn primary" data-act="add-worker">+ Dodaj radnika</button><button class="btn" data-worker-toggle="1">'+(showAllStaff?'Sakrij neaktivne/testne':'Prikaži i neaktivne/testne')+'</button>')+
+  '<section class="panel" id="balkanWorkerManagement"><h2>Spisak radnika</h2>'+
+  '<div class="tablewrap"><table class="simpletable"><thead><tr><th>Radnik</th><th>Barkod</th><th>Objekat</th><th>Smjena</th><th>Radni odnos</th><th>Upravljanje</th></tr></thead><tbody>'+
+  (rows||'<tr><td colspan="6">Nema radnika u ovom prikazu.</td></tr>')+'</tbody></table></div>'+
+  '<p class="smalltext">Za godišnji fond, prenesene dane, korišćenje i saldo otvori karticu Godišnji odmori. Ovdje se uređuju podaci o zaposlenju, smjenama i barkod karticama.</p></section>';
 };
 const _originalEnhancedReports=reports;
 reports=function(){
@@ -1659,8 +1659,8 @@ const _workersWithAllCards=workers;
 workers=function(){
  const original=_workersWithAllCards();
  const eligible=printableWorkerCards().length;
- return original.replace('<section class="panel">',
- '<section class="panel"><div class="actionline" style="margin-bottom:12px">'+
+ return original.replace('<section class="panel" id="balkanWorkerManagement">',
+ '<section class="panel" id="balkanWorkerManagement"><div class="actionline" style="margin-bottom:12px">'+
  '<button class="btn primary" type="button" data-print-all-workers="1">⎙ Štampaj kartice za sve radnike ('+eligible+')</button>'+
  '<span class="smalltext">Svaka kartica ima ime i važeći barkod. Testne i kartice bez stvarnog koda ne štampamo.</span></div>')
  .replace(/(<button class="btn small" data-edit-worker="([^"]+)">Uredi<\/button>)/g,
@@ -1893,10 +1893,8 @@ workerForm=function(id){
   '<input name="leaveCarryDeadline" type="date" value="'+esc(value)+'" min="'+y+'-01-01" max="'+(y+2)+'-12-31">'+
   '<small>Uobičajeni rok je 30. jun. Kasniji datum unesi samo za dokumentovani zakonski izuzetak (npr. odgovarajuće odsustvo). Negativan saldo je administrativna korekcija, a ne automatski dug radnika.</small>');
 };
-const _balkanWorkersBeforeAccruedTable=workers;
-workers=function(){
- const original=_balkanWorkersBeforeAccruedTable();
- const y=new Date().getFullYear(),todayStr=today();
+function balkanLiveLeaveSummary(year=leaveYear){
+ const y=Number(year),todayStr=today();
  const visible=S.employees.slice().filter(e=>showAllStaff||(!e.hidden&&!e.isTest&&e.active!==false)).sort((a,b)=>a.name.localeCompare(b.name,'bs'));
  const fmt=v=>Number.isFinite(Number(v))?String(v):'—';
  const rows=visible.map(e=>{
@@ -1904,7 +1902,7 @@ workers=function(){
   const carryCell=(d.carry>0?'+':'')+fmt(d.carry)+(d.carrySource!=='ručni unos'?' *':'');
   const transfer=d.carryActive>0?'<b>'+d.carryActive+'</b>':'0';
   const warning=d.carryExpired>0?' · isteklo '+d.carryExpired:'';
-  return '<tr><td><b>'+esc(e.name)+'</b><br><small>'+esc(e.hiredAt||'Datum zaposlenja nije unesen')+'</small></td>'+
+  return '<tr><td><button class="btn small" data-leave-emp="'+esc(e.id)+'">'+esc(e.name)+'</button><br><small>'+esc(e.hiredAt||'Datum zaposlenja nije unesen')+'</small></td>'+
    '<td>'+fmt(d.quota)+'</td><td><b>'+fmt(d.accrued)+'</b></td>'+
    '<td>'+esc(carryCell)+'<br><small>Iz prenosa iskorišćeno: '+fmt(d.carryUsed)+'</small></td>'+
    '<td>'+transfer+'<br><small>Rok '+esc(d.carryDeadline)+warning+'</small></td>'+
@@ -1918,9 +1916,8 @@ workers=function(){
  '<div class="tablewrap"><table class="simpletable"><thead><tr><th>Radnik</th><th>Pravo '+y+'</th><th>Ostvareno do danas</th><th>Preneseno iz '+(y-1)+'</th><th>Još važi prenos</th><th>Iskorišćeno (ukupno)</th><th>Automatski GO (za provjeru)</th><th>Planirano</th><th>Saldo danas</th><th>Godišnji saldo</th><th>Provjera</th></tr></thead><tbody>'+
  (rows||'<tr><td colspan="11">Nema radnika u ovom prikazu.</td></tr>')+'</tbody></table></div>'+
  '<p class="smalltext">Saldo danas = ostvareno + važeći preostali prenos + već potrošeni dio prenosa − iskorišćeno (uključujući automatski GO za provjeru) − planirano ± negativna korekcija. Standardni rok prenosa je 30. jun, a kasniji rok unosi se u Uredi radnika samo kada postoji zakonski izuzetak. * = privremeni podatak iz arhive 2025. Potvrda fonda i prenosa je obavezna za službeni obračun; negativni saldo je upozorenje, ne automatska sankcija.</p></section>';
- const pos=original.indexOf('<section class="panel">');
- return pos>=0?original.slice(0,pos)+panel+original.slice(pos):original+panel;
-};
+ return panel;
+}
 
 
 // Skupna potvrda fonda bez prepisivanja posebnih prava i prenosa 2025.
@@ -1940,7 +1937,7 @@ function balkanAnnualBulkCandidates(year){
 }
 const _balkanAnnualPageBeforeBatch=leavePage;
 leavePage=function(){
- const html=_balkanAnnualPageBeforeBatch(),pending=balkanAnnualBulkCandidates(leaveYear);
+ const html=balkanLiveLeaveSummary(leaveYear)+_balkanAnnualPageBeforeBatch(),pending=balkanAnnualBulkCandidates(leaveYear);
  const eligible=pending.filter(x=>x.total>=x.already);
  return html+'<section class="panel" id="balkanAnnualBulk"><h2>Godišnji fond za sve radnike</h2>'+
  '<p>Program sam izračunava predlog na osnovu datuma zaposlenja i petodnevne ili šestodnevne radne sedmice objekta. Uvećanja i izuzeci ostaju individualni.</p>'+

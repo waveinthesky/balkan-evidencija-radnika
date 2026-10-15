@@ -19,9 +19,13 @@ await page.evaluate(()=>{
  window.BALKAN_V6.render();
 });
 await page.getByRole('button',{name:/Radnici/}).first().click();
-const quotaRow=page.locator('tr').filter({hasText:'Odmor Bez Prava'}).first();
+assert.equal(await page.locator('#balkanLiveLeaveSummary').count(),0,'Godišnji pregled nije više u Radnici');
+assert.equal(await page.locator('#balkanWorkerManagement').count(),1,'Radnici pokazuju uredničku tabelu');
+await page.locator('[data-route="godisnji"]').first().click();
+const quotaRow=page.locator('#balkanLiveLeaveSummary tr').filter({hasText:'Odmor Bez Prava'}).first();
 assert.match(await quotaRow.innerText(),/Procjena|potvrdi pravo|Unesi pravo/i,'Nepotvrđen godišnji fond je jasno označen kao informativan');
 assert.ok((await quotaRow.innerText()).includes('1'),'Manual GO day counted even without quota');
+await page.locator('[data-route="radnici"]').first().click();
 await page.locator('tr').filter({hasText:'Bolovanje Testni'}).locator('[data-sick-worker]').click();
 assert.ok(await page.locator('#balkanSickLeaveForm').count(),'Sick leave form opened');
 await page.locator('#balkanSickLeaveForm input[name=from]').fill('2026-03-01');
