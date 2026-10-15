@@ -7,6 +7,49 @@ const login=document.getElementById('v6Login');
 const message=document.getElementById('v6AuthMessage');
 const form=document.getElementById('v6LoginForm');
 const api=window.BALKAN_V6;
+
+const adminCardCode='BKADM'+ADMIN_UID.replace(/[^a-zA-Z0-9]/g,'').slice(0,14).toUpperCase();
+const adminEmailStorageKey='balkan_admin_email_'+ADMIN_UID;
+const emailInput=document.getElementById('v6Email');
+const passwordInput=document.getElementById('v6Password');
+const barcodeInput=document.getElementById('v6AdminBarcode');
+let adminLoginMode='email';
+function savedAdminEmail(){try{return localStorage.getItem(adminEmailStorageKey)||''}catch{return ''}}
+function rememberAdminEmail(address){if(!address)return;try{localStorage.setItem(adminEmailStorageKey,address)}catch{}}
+function setAdminLoginMode(mode){
+ adminLoginMode=mode==='barcode'?'barcode':'email';
+ document.getElementById('v6EmailLabel').hidden=adminLoginMode!=='email';
+ document.getElementById('v6BarcodeLabel').hidden=adminLoginMode!=='barcode';
+ emailInput.required=adminLoginMode==='email';
+ barcodeInput.required=adminLoginMode==='barcode';
+ for(const [id,selected] of [['v6ModeEmail',adminLoginMode==='email'],['v6ModeBarcode',adminLoginMode==='barcode']]){
+  const btn=document.getElementById(id);btn.setAttribute('aria-pressed',String(selected));
+  btn.style.background=selected?'#eaf1ff':'white';
+ }
+ (adminLoginMode==='email'?emailInput:barcodeInput).focus();
+}
+document.getElementById('v6ModeEmail').addEventListener('click',()=>setAdminLoginMode('email'));
+document.getElementById('v6ModeBarcode').addEventListener('click',()=>setAdminLoginMode('barcode'));
+if(savedAdminEmail())emailInput.value=savedAdminEmail();
+function adminBarcodeSettings(){
+ return `<section class="panel"><h2>Administratorska barkod kartica</h2>
+ <p>Barkod može zamijeniti <b>kucanje e-maila</b>, ali je Firebase lozinka uvijek obavezna. Barkod nije tajna niti samostalni pristup administratoru.</p>
+ <div id="v6AdminBarcodeCard" style="width:min(100%,460px);background:white;border:1px dashed #a8b8cf;padding:14px;text-align:center">
+ <strong>BALKAN – ADMINISTRATOR</strong>
+ <div style="max-width:100%;margin:8px auto">${api.barcodeSvg(adminCardCode)}</div>
+ <div style="font-family:monospace;font-weight:bold;letter-spacing:1px">${adminCardCode}</div></div>
+ <p class="smalltext">Ovu karticu možeš koristiti s barkod čitačem. Na svakom novom telefonu ili računaru potrebno je jednom prijaviti se e-mailom i lozinkom; poslije toga možeš skenirati karticu i upisati lozinku.</p>
+ <button class="btn" id="v6PrintAdminBarcode" type="button">⎙ Štampaj administratorski barkod</button></section>`;
+}
+document.addEventListener('click',event=>{
+ if(event.target?.id!=='v6PrintAdminBarcode')return;
+ const card=document.getElementById('v6AdminBarcodeCard');if(!card)return;
+ const printWin=window.open('','_blank','width=570,height=380');
+ if(!printWin){alert('Dozvoli iskačuće prozore ili odštampaj ovu stranicu iz preglednika.');return}
+ printWin.document.write('<!doctype html><html lang="bs"><head><meta charset="utf-8"><title>BALKAN admin barkod</title><style>body{font-family:Arial;padding:25px;text-align:center}svg{width:100%;height:90px}#v6AdminBarcodeCard{max-width:500px;margin:auto}</style></head><body>'+card.outerHTML+'<p>Samo identifikator administratora – potrebna je Firebase lozinka.</p></body></html>');
+ printWin.document.close();printWin.focus();setTimeout(()=>printWin.print(),150);
+});
+
 window.BALKAN_ARCHIVE={display:()=>HIST.display()};
 HIST.bindUI();
 const columns=api.collections();
@@ -27,7 +70,7 @@ function programHelp(){return `
  <h2>Uputstvo za korištenje programa BALKAN</h2>
  <p class="smalltext">Ovo uputstvo opisuje postojeće funkcije i ograničenja. Kada se mijenjaju podaci, administrator treba provjeriti Firebase status i izvještaj, a ne samo izgled kalendara.</p>
  <details open><summary><b>1. Početna stranica za radnike</b></summary><p>Web stranica otvara ekran DOLAZAK / ODLAZAK. Radnik odabere radnju i skenira barkod kartice. Ne unosi lozinku niti se prijavljuje na Firebase. Poruka <b>Potvrđeno u Firebase bazi</b> smije značiti samo stvarno potvrđen upis. Ako server odbije upis, prijava nije izvršena. Bez interneta trenutni barkod ekran ne garantuje čuvanje prijave.</p></details>
- <details><summary><b>2. Administratorska prijava i sigurnost</b></summary><p>U administraciju se ulazi Firebase administratorskim nalogom. Nikad ne stavljaj lozinke ili privatni JSON na GitHub. Program je javno dostupan kao web stranica, ali Firebase pravila moraju štititi podatke. Sam Anonymous Authentication nije dokaz da je skeniranje izvršio ovlašten radnik; serverska provjera skeniranja još treba posebnu završnu provjeru.</p></details>
+ <details><summary><b>2. Administratorska prijava i sigurnost</b></summary><p>Prijavi se e-mailom i lozinkom ili skeniraj administratorski barkod uz istu lozinku. Kartica se štampa iz Postavki, a na novom uređaju najprije se jednom prijavi e-mailom. U administraciju se ulazi Firebase administratorskim nalogom. Nikad ne stavljaj lozinke ili privatni JSON na GitHub. Program je javno dostupan kao web stranica, ali Firebase pravila moraju štititi podatke. Sam Anonymous Authentication nije dokaz da je skeniranje izvršio ovlašten radnik; serverska provjera skeniranja još treba posebnu završnu provjeru.</p></details>
  <details><summary><b>3. Radnici, barkodovi i prestanak rada</b></summary><p>Radnici → Dodaj/Uredi: ime, stvarni barkod, objekat, datum početka i eventualnog prestanka rada, aktivan/neaktivan. Za radnike uvezene iz 2025. provjeri i zamijeni privremene kodove NEPOSTAVLJENO. Ne briši bivše radnike jer se njihova istorija mora sačuvati. Ako je radnik prestao raditi, uneseni datum ili status mora zaustaviti očekivanje dolazaka za kasniji period.</p></details>
  <details><summary><b>4. Objekti i radno vrijeme</b></summary><p>Objekti → Uredi: otvaranje i zatvaranje, radni dani, tolerancija i datum od kojeg raspored važi. Ranije postavke ostaju u istoriji. Unesi i <b>normu plaćenih sati za radni dan</b>, jer trajanje otvorenosti prodavnice nije isto što i radni sati pojedinačnog radnika.</p></details>
  <details><summary><b>5. Kalendar, jedan klik i detaljne ispravke</b></summary><p>Kalendar prikazuje cijeli mjesec bez bočnog skrolovanja. Klik na običnu ćeliju mijenja oznaku N ↔ P i upisuje administrativnu izmjenu. P uneseno ručno <b>ne znači da imamo izmjereno vrijeme rada</b>. Dani sa skeniranjima, praznicima ili već evidentiranim odsustvom ne prepisuju se jednim klikom: izaberi dan, pa u detaljima koristi Ručna evidencija / ispravka. Svaka promjena ostaje u istoriji.</p></details>
@@ -85,6 +128,7 @@ async function showApp(){
    .replace(/<section class="panel"><h2>Automatske sigurnosne kopije i sinhronizacija<\/h2>[\s\S]*?<\/section>/,'')
    .replace(/<section class="panel"><h2>Zaštita barkod kartica – Google Authenticator<\/h2>[\s\S]*?<\/section>/,''))
    +HIST.settings()
+   +adminBarcodeSettings()
    +programHelp()
    +`<section class="panel"><h2>Firebase – status</h2><div id="v6FirebaseStatus">${status()}</div><button class="btn" id="v6SignOut" type="button">Odjavi Firebase administratora</button><p class="smalltext">Nema vezivanja programa za računar. Skeniranje barkoda zahtijeva završnu serversku provjeru prije službene upotrebe.</p></section>`);
 
@@ -119,11 +163,25 @@ async function showApp(){
  window.BALKAN_FIREBASE_READY=serverVerified;
  login.style.display='none';api.render();paintCloud();
 }
-form.addEventListener('submit',async e=>{e.preventDefault();message.textContent='Prijavljivanje…';try{await signInWithEmailAndPassword(auth,document.getElementById('v6Email').value.trim(),document.getElementById('v6Password').value)}catch(e){message.textContent='Prijava nije uspjela: '+e.message}});
+form.addEventListener('submit',async event=>{
+ event.preventDefault();
+ message.textContent='Provjera administratorskog naloga…';
+ try{
+  let email=emailInput.value.trim();
+  if(adminLoginMode==='barcode'){
+   if(barcodeInput.value.trim().toUpperCase()!==adminCardCode)throw Error('Neprepoznat administratorski barkod.');
+   email=savedAdminEmail();
+   if(!email)throw Error('Prvi put na ovom uređaju prijavi se e-mailom i lozinkom, pa ubuduće koristi barkod.');
+  }
+  if(!email||!passwordInput.value)throw Error('Potrebni su administratorski nalog i lozinka.');
+  await signInWithEmailAndPassword(auth,email,passwordInput.value);
+ }catch(error){message.textContent='Prijava nije uspjela: '+error.message}
+});
 document.addEventListener('click',e=>{if(e.target.closest?.('[data-act="restore"]')){e.stopImmediatePropagation();e.preventDefault();alert('Vraćanje starih lokalnih podataka u zajedničku bazu se radi isključivo uz prethodni backup i provjeru migracije.');return}if(e.target.id==='v6SignOut'||e.target.closest?.('[data-act="logout"]')){e.stopImmediatePropagation();e.preventDefault();signOut(auth)}},true);
 onAuthStateChanged(auth,async user=>{
  if(!user){unsubs.forEach(f=>f());unsubs=[];started=false;cloudReady=false;serverVerified=false;window.BALKAN_FIREBASE_READY=false;login.style.display='grid';form.style.display='block';message.textContent='Prijavi se Firebase administratorskim nalogom.';return}
  if(user.uid!==ADMIN_UID){message.textContent='Ovaj nalog nema administratorska ovlaštenja.';form.style.display='none';await signOut(auth);return}
+ rememberAdminEmail(user.email|| (adminLoginMode==='email'?emailInput.value.trim():''));
  if(started)return;started=true;message.textContent='Učitavanje zajedničke evidencije…';try{await showApp()}catch(e){message.textContent='Ne mogu učitati Firestore: '+e.message;started=false;cloudReady=false;serverVerified=false;syncError=e.message;window.BALKAN_FIREBASE_READY=false;paintCloud();form.style.display='none'}
 });
 
