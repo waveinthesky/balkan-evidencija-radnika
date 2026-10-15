@@ -20,7 +20,7 @@ await page.evaluate(()=>{
 });
 await page.getByRole('button',{name:/Radnici/}).first().click();
 const quotaRow=page.locator('tr').filter({hasText:'Odmor Bez Prava'}).first();
-assert.ok((await quotaRow.innerText()).includes('Unesi pravo'),'Missing yearly quota shown honestly');
+assert.match(await quotaRow.innerText(),/Procjena|potvrdi pravo|Unesi pravo/i,'Nepotvrđen godišnji fond je jasno označen kao informativan');
 assert.ok((await quotaRow.innerText()).includes('1'),'Manual GO day counted even without quota');
 await page.locator('tr').filter({hasText:'Bolovanje Testni'}).locator('[data-sick-worker]').click();
 assert.ok(await page.locator('#balkanSickLeaveForm').count(),'Sick leave form opened');
@@ -29,7 +29,7 @@ assert.equal(await page.locator('#balkanSickLeaveForm input[name=to]').inputValu
 await page.locator('#balkanSickLeaveForm button[type=submit]').click();
 await page.waitForFunction(()=>document.querySelector('#balkanSickLeaveForm')===null);
 assert.equal(await page.evaluate(()=>window.BALKAN_V6.state().employees.find(e=>e.id==='sick-emp').sickLeaves.length),1,'Saved range');
-assert.ok((await page.locator('tr').filter({hasText:'Bolovanje Testni'}).first().innerText()).includes('Na bolovanju'),'Worker remains in employee management');
+assert.ok((await page.locator('tr').filter({has:page.locator('[data-sick-worker]')}).filter({hasText:'Bolovanje Testni'}).innerText()).includes('Na bolovanju'),'Worker remains in employee management');
 await page.getByRole('button',{name:/Pregled/}).first().click();
 assert.ok(await page.getByText('Na bolovanju – bez upozorenja o izostanku').count(),'Dashboard separate sick list');
 const dash=await page.locator('body').innerText();

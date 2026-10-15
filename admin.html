@@ -130,9 +130,9 @@ function settings(){return `${pageTitle('Postavke','Lokalna instalacija, sigurno
 // DIALOGS
 function modal(title,body,foot=''){let root=$('modal');root.innerHTML=`<div class="modalroot" id="overlay"><div class="modal" role="dialog" aria-modal="true" aria-label="${esc(title)}"><div class="modalhead"><h2>${esc(title)}</h2><button type="button" class="btn small" data-act="close-modal">✕</button></div>${body}${foot}</div></div>`}
 function closeModal(){$('modal').innerHTML=''}
-function workerForm(id){let e=S.employees.find(x=>x.id===id),newbie=!e;modal(newbie?'Dodaj radnika':'Uredi radnika',`<form id="workerForm" class="grid"><input type="hidden" name="id" value="${esc(id||'')}"><div class="field"><label>Ime i prezime *</label><input required name="name" value="${esc(e?.name||'')}" placeholder="Ime Prezime"></div><div class="field"><label>Barkod / šifra kartice *</label><div class="actionline"><input class="ctl" id="workerBarcode" required name="barcode" value="${esc(e?.barcode||generateCode())}" style="flex:1"><button class="btn small" type="button" data-act="generate-code">Novi kod</button></div></div><div class="fields"><div class="field"><label>Osnovni objekat</label><select name="defaultLocationId">${selections(e?.defaultLocationId||S.station)}</select></div><div class="field"><label>Datum početka</label><input type="date" name="hiredAt" value="${esc(e?e.hiredAt||'':today())}" ${newbie?'required':''}></div><div class="field"><label>Završetak rada (opcionalno)</label><input type="date" name="terminatedAt" value="${esc(e?.terminatedAt||'')}"></div><div class="field"><label>Od kada prati dolaske i izostanke</label><input type="date" name="attendanceFrom" value="${esc(e?.attendanceFrom&&e.attendanceFrom<'2090-01-01'?e.attendanceFrom:today())}"><small>Raniji dani bez barkod prijava ne računaju se kao izostanak.</small></div></div><div class="field"><label>Podrazumijevana smjena zaposlenog</label><select name="defaultShift"><option value="" ${!e?.defaultShift?'selected':''}>Nije dodijeljena (nema automatskog kašnjenja bez pojedinačnog početka)</option><option value="first" ${e?.defaultShift==='first'?'selected':''}>Prva smjena</option><option value="second" ${e?.defaultShift==='second'?'selected':''}>Druga smjena</option><option value="custom" ${e?.defaultShift==='custom'?'selected':''}>Posebna smjena – prema početku ispod</option></select></div><div class="fields"><div class="field"><label>Uobičajeni početak smjene (opcionalno) (24h)</label><input name="shiftStart" type="text" inputmode="numeric" maxlength="5" autocomplete="off" placeholder="HH:MM" pattern="([01][0-9]|2[0-3]):[0-5][0-9]" title="Vrijeme 00:00–23:59 (bez AM/PM), npr. 14:30" value="${esc(e?.shiftStart||'')}"><small>Za tačno računanje kašnjenja; smjenu za pojedini dan možeš promijeniti u kalendaru.</small></div><div class="field"><label>Obračunski sati po radnom danu (opcionalno)</label><input name="paidHours" type="number" min="0" max="16" step="0.25" value="${esc(e?.paidHours||'')}"><small>Za radnike s drugačijom normom od objekta.</small></div></div><div class="fields"><div class="field"><label>Pravo na godišnji odmor – ${new Date().getFullYear()} (dana)</label><input name="leaveQuota" type="number" min="0" max="90" step="1" value="${esc(e?.leaveQuotaByYear?.[new Date().getFullYear()]??'')}" placeholder="Unesi prema rješenju"><small>Stari pregled radnika: službeni godišnji fond i dodatne dane potvrđuješ u kartici Godišnji odmori → Odredi godišnji fond.</small></div><div class="field"><label>Preneseni saldo iz prethodne godine (može biti negativan)</label><input name="leaveCarry" type="number" min="-90" max="90" step="1" value="${esc(e?.leaveCarryByYear?.[new Date().getFullYear()]??'')}"><small>Provjeri stanje prema dokumentima; stara Excel tabela uključuje i druge odsutnosti.</small></div></div><label class="weekday"><input name="isTest" type="checkbox" ${e?.isTest?'checked':''}> Testni radnik (sakrij iz redovnog pregleda)</label><label class="weekday"><input name="hidden" type="checkbox" ${e?.hidden?'checked':''}> Sakrij iz glavnih prikaza (ostaje u istoriji)</label><label class="weekday"><input name="active" type="checkbox" ${e?.active!==false?'checked':''}> Aktivan zaposlenik</label><div class="note info">Ako promijeniš objekat, promjena važi od današnjeg datuma; ranije dodjele ostaju sačuvane.</div><div class="modalfoot"><button type="button" data-act="close-modal" class="btn">Odustani</button><button class="btn primary" type="submit">Sačuvaj radnika</button></div></form>`)}
+function workerForm(id){let e=S.employees.find(x=>x.id===id),newbie=!e;modal(newbie?'Dodaj radnika':'Uredi radnika',`<form id="workerForm" class="grid"><input type="hidden" name="id" value="${esc(id||'')}"><div class="field"><label>Ime i prezime *</label><input required name="name" value="${esc(e?.name||'')}" placeholder="Ime Prezime"></div><div class="field"><label>Barkod / šifra kartice *</label><div class="actionline"><input class="ctl" id="workerBarcode" required name="barcode" value="${esc(e?.barcode||generateCode())}" style="flex:1"><button class="btn small" type="button" data-act="generate-code">Novi kod</button></div></div><div class="fields"><div class="field"><label>Osnovni objekat</label><select name="defaultLocationId">${selections(e?.defaultLocationId||S.station)}</select></div><div class="field"><label>Datum početka</label><input type="date" name="hiredAt" value="${esc(e?e.hiredAt||'':today())}" ${newbie?'required':''}></div><div class="field"><label>Završetak rada (opcionalno)</label><input type="date" name="terminatedAt" value="${esc(e?.terminatedAt||'')}"></div><div class="field"><label>Od kada prati dolaske i izostanke</label><input type="date" name="attendanceFrom" value="${esc(e?.attendanceFrom&&e.attendanceFrom<'2090-01-01'?e.attendanceFrom:today())}"><small>Raniji dani bez barkod prijava ne računaju se kao izostanak.</small></div></div><div class="field"><label>Podrazumijevana smjena zaposlenog</label><select name="defaultShift"><option value="" ${!e?.defaultShift?'selected':''}>Automatski – prati vrijeme otvaranja objekta (sezonski)</option><option value="first" ${e?.defaultShift==='first'?'selected':''}>Prva smjena</option><option value="second" ${e?.defaultShift==='second'?'selected':''}>Druga smjena</option><option value="custom" ${e?.defaultShift==='custom'?'selected':''}>Posebna smjena – prema početku ispod</option></select></div><div class="fields"><div class="field"><label>Poseban početak (samo ako izabereš Posebna smjena) (24h)</label><input name="shiftStart" type="text" inputmode="numeric" maxlength="5" autocomplete="off" placeholder="HH:MM" pattern="([01][0-9]|2[0-3]):[0-5][0-9]" title="Vrijeme 00:00–23:59 (bez AM/PM), npr. 14:30" value="${esc(e?.shiftStart||'')}"><small>Koristi se samo ako odabereš Posebna smjena. Inače početak prati sezonski raspored objekta; izuzetke za jedan dan mijenjaš u kalendaru.</small></div><div class="field"><label>Obračunski sati po radnom danu (opcionalno)</label><input name="paidHours" type="number" min="0" max="16" step="0.25" value="${esc(e?.paidHours||'')}"><small>Za radnike s drugačijom normom od objekta.</small></div></div><div class="fields"><div class="field"><label>Pravo na godišnji odmor – ${new Date().getFullYear()} (dana)</label><input name="leaveQuota" type="number" min="0" max="90" step="1" value="${esc(e?.leaveQuotaByYear?.[new Date().getFullYear()]??'')}" placeholder="Unesi prema rješenju"><small>Stari pregled radnika: službeni godišnji fond i dodatne dane potvrđuješ u kartici Godišnji odmori → Odredi godišnji fond.</small></div><div class="field"><label>Preneseni saldo iz prethodne godine (može biti negativan)</label><input name="leaveCarry" type="number" min="-90" max="90" step="1" value="${esc(e?.leaveCarryByYear?.[new Date().getFullYear()]??'')}"><small>Provjeri stanje prema dokumentima; stara Excel tabela uključuje i druge odsutnosti.</small></div></div><label class="weekday"><input name="isTest" type="checkbox" ${e?.isTest?'checked':''}> Testni radnik (sakrij iz redovnog pregleda)</label><label class="weekday"><input name="hidden" type="checkbox" ${e?.hidden?'checked':''}> Sakrij iz glavnih prikaza (ostaje u istoriji)</label><label class="weekday"><input name="active" type="checkbox" ${e?.active!==false?'checked':''}> Aktivan zaposlenik</label><div class="note info">Ako promijeniš objekat, promjena važi od današnjeg datuma; ranije dodjele ostaju sačuvane.</div><div class="modalfoot"><button type="button" data-act="close-modal" class="btn">Odustani</button><button class="btn primary" type="submit">Sačuvaj radnika</button></div></form>`)}
 function generateCode(){return 'BK'+Math.floor(Math.random()*9e8+1e8).toString()}
-function locationForm(id){let l=S.locations.find(x=>x.id===id),sc=l?getSchedule(l.id,today()):null,days=sc?.days||[1,2,3,4,5,6];modal(l?'Objekat i sezonsko radno vrijeme':'Dodaj objekat',`<form id="locationForm" class="grid"><input type="hidden" name="id" value="${esc(id||'')}"><div class="field"><label>Naziv objekta *</label><input required name="name" value="${esc(l?.name||'')}" placeholder="Restoran, Market 3..."></div><div class="field"><label>Novo radno vrijeme važi od datuma</label><input type="date" name="from" required value="${today()}"></div><div class="fields"><div class="field"><label>Otvaranje (24h)</label><input name="open" type="text" inputmode="numeric" maxlength="5" autocomplete="off" placeholder="HH:MM" pattern="([01][0-9]|2[0-3]):[0-5][0-9]" title="Vrijeme 00:00–23:59 (bez AM/PM), npr. 14:30" required value="${esc(sc?.open||'08:00')}"></div><div class="field"><label>Zatvaranje (24h)</label><input name="close" type="text" inputmode="numeric" maxlength="5" autocomplete="off" placeholder="HH:MM" pattern="([01][0-9]|2[0-3]):[0-5][0-9]" title="Vrijeme 00:00–23:59 (bez AM/PM), npr. 14:30" required value="${esc(sc?.close||'20:00')}"></div><div class="field"><label>Tolerancija prve prijave (min.)</label><input name="grace" min="0" max="180" type="number" value="${sc?.grace||0}"></div><div class="field"><label>Norma plaćenih sati po radnom danu</label><input name="paidHours" type="number" min="0" max="16" step="0.25" value="${sc?.paidHours||''}" placeholder="Npr. 8"><small>Za obračunske sate praznika; nije jednako trajanju otvorenosti marketa.</small></div></div><div class="fields"><div class="field"><label>Prva smjena – početak (24h)</label><input name="firstStart" type="text" inputmode="numeric" maxlength="5" autocomplete="off" placeholder="HH:MM" pattern="([01][0-9]|2[0-3]):[0-5][0-9]" title="Vrijeme 00:00–23:59 (bez AM/PM), npr. 14:30" value="${esc(sc?.firstStart||'')}"></div><div class="field"><label>Prva smjena – završetak (24h)</label><input name="firstEnd" type="text" inputmode="numeric" maxlength="5" autocomplete="off" placeholder="HH:MM" pattern="([01][0-9]|2[0-3]):[0-5][0-9]" title="Vrijeme 00:00–23:59 (bez AM/PM), npr. 14:30" value="${esc(sc?.firstEnd||'')}"></div><div class="field"><label>Druga smjena – početak (24h)</label><input name="secondStart" type="text" inputmode="numeric" maxlength="5" autocomplete="off" placeholder="HH:MM" pattern="([01][0-9]|2[0-3]):[0-5][0-9]" title="Vrijeme 00:00–23:59 (bez AM/PM), npr. 14:30" value="${esc(sc?.secondStart||'')}"></div><div class="field"><label>Druga smjena – završetak (24h)</label><input name="secondEnd" type="text" inputmode="numeric" maxlength="5" autocomplete="off" placeholder="HH:MM" pattern="([01][0-9]|2[0-3]):[0-5][0-9]" title="Vrijeme 00:00–23:59 (bez AM/PM), npr. 14:30" value="${esc(sc?.secondEnd||'')}"></div></div><div class="note info">Smjene služe za poređenje prijave svakog radnika. Dodijeli mu prvu ili drugu smjenu u profilu. Bez dodijeljene smjene nema automatskog kašnjenja. Za noćne smjene koje prelaze ponoć potrebno je posebno podešavanje.</div><div class="field"><label>Radni dani objekta</label><div class="weekdays">${[1,2,3,4,5,6,0].map(i=>`<label class="weekday"><input type="checkbox" name="day${i}" ${days.includes(i)?'checked':''}>${WEEK[i]}</label>`).join('')}</div></div><div class="note info">Stare postavke ostaju u istoriji. Novi raspored važi od odabranog datuma, uključujući i ako se unese promjena za raniji datum.</div>${l?`<h3>Historija promjena</h3><div class="tablewrap"><table class="simpletable"><thead><tr><th>Važi od</th><th>Otvaranje</th><th>Zatvaranje</th><th>Prva smjena</th><th>Druga smjena</th></tr></thead><tbody>${l.schedules.slice().sort((a,b)=>b.from.localeCompare(a.from)).map(s=>`<tr><td>${s.from}</td><td>${s.open}</td><td>${s.close}</td><td>${esc(s.firstStart||'—')}–${esc(s.firstEnd||'—')}</td><td>${esc(s.secondStart||'—')}–${esc(s.secondEnd||'—')}</td></tr>`).join('')}</tbody></table></div>`:''}<div class="modalfoot"><button class="btn" type="button" data-act="close-modal">Odustani</button><button type="submit" class="btn primary">Sačuvaj</button></div></form>`)}
+function locationForm(id){let l=S.locations.find(x=>x.id===id),sc=l?getSchedule(l.id,today()):null,days=sc?.days||[1,2,3,4,5,6];modal(l?'Objekat i sezonsko radno vrijeme':'Dodaj objekat',`<form id="locationForm" class="grid"><input type="hidden" name="id" value="${esc(id||'')}"><div class="field"><label>Naziv objekta *</label><input required name="name" value="${esc(l?.name||'')}" placeholder="Restoran, Market 3..."></div><div class="field"><label>Novo radno vrijeme važi od datuma</label><input type="date" name="from" required value="${today()}"></div><div class="fields"><div class="field"><label>Otvaranje (24h)</label><input name="open" type="text" inputmode="numeric" maxlength="5" autocomplete="off" placeholder="HH:MM" pattern="([01][0-9]|2[0-3]):[0-5][0-9]" title="Vrijeme 00:00–23:59 (bez AM/PM), npr. 14:30" required value="${esc(sc?.open||'08:00')}"></div><div class="field"><label>Zatvaranje (24h)</label><input name="close" type="text" inputmode="numeric" maxlength="5" autocomplete="off" placeholder="HH:MM" pattern="([01][0-9]|2[0-3]):[0-5][0-9]" title="Vrijeme 00:00–23:59 (bez AM/PM), npr. 14:30" required value="${esc(sc?.close||'20:00')}"></div><div class="field"><label>Tolerancija prve prijave (min.)</label><input name="grace" min="0" max="180" type="number" value="${sc?.grace||0}"></div><div class="field"><label>Norma plaćenih sati po radnom danu</label><input name="paidHours" type="number" min="0" max="16" step="0.25" value="${sc?.paidHours||''}" placeholder="Npr. 8"><small>Za obračunske sate praznika; nije jednako trajanju otvorenosti marketa.</small></div></div><div class="fields"><div class="field"><label>Prva smjena – početak (24h)</label><input name="firstStart" type="text" inputmode="numeric" maxlength="5" autocomplete="off" placeholder="HH:MM" pattern="([01][0-9]|2[0-3]):[0-5][0-9]" title="Vrijeme 00:00–23:59 (bez AM/PM), npr. 14:30" value="${esc(sc?.firstStart||'')}"></div><div class="field"><label>Prva smjena – završetak (24h)</label><input name="firstEnd" type="text" inputmode="numeric" maxlength="5" autocomplete="off" placeholder="HH:MM" pattern="([01][0-9]|2[0-3]):[0-5][0-9]" title="Vrijeme 00:00–23:59 (bez AM/PM), npr. 14:30" value="${esc(sc?.firstEnd||'')}"></div><div class="field"><label>Druga smjena – početak (24h)</label><input name="secondStart" type="text" inputmode="numeric" maxlength="5" autocomplete="off" placeholder="HH:MM" pattern="([01][0-9]|2[0-3]):[0-5][0-9]" title="Vrijeme 00:00–23:59 (bez AM/PM), npr. 14:30" value="${esc(sc?.secondStart||'')}"></div><div class="field"><label>Druga smjena – završetak (24h)</label><input name="secondEnd" type="text" inputmode="numeric" maxlength="5" autocomplete="off" placeholder="HH:MM" pattern="([01][0-9]|2[0-3]):[0-5][0-9]" title="Vrijeme 00:00–23:59 (bez AM/PM), npr. 14:30" value="${esc(sc?.secondEnd||'')}"></div></div><div class="note info">Radnik sa automatskim režimom prati otvaranje objekta prema datumu. Prva smjena prati otvaranje ako nema posebno podešen početak; za drugu smjenu podesi njen početak. Za noćne smjene koje prelaze ponoć potrebno je posebno podešavanje.</div><div class="field"><label>Radni dani objekta</label><div class="weekdays">${[1,2,3,4,5,6,0].map(i=>`<label class="weekday"><input type="checkbox" name="day${i}" ${days.includes(i)?'checked':''}>${WEEK[i]}</label>`).join('')}</div></div><div class="note info">Stare postavke ostaju u istoriji. Novi raspored važi od odabranog datuma, uključujući i ako se unese promjena za raniji datum.</div>${l?`<h3>Historija promjena</h3><div class="tablewrap"><table class="simpletable"><thead><tr><th>Važi od</th><th>Otvaranje</th><th>Zatvaranje</th><th>Prva smjena</th><th>Druga smjena</th></tr></thead><tbody>${l.schedules.slice().sort((a,b)=>b.from.localeCompare(a.from)).map(s=>`<tr><td>${s.from}</td><td>${s.open}</td><td>${s.close}</td><td>${esc(s.firstStart||'—')}–${esc(s.firstEnd||'—')}</td><td>${esc(s.secondStart||'—')}–${esc(s.secondEnd||'—')}</td></tr>`).join('')}</tbody></table></div>`:''}<div class="modalfoot"><button class="btn" type="button" data-act="close-modal">Odustani</button><button type="submit" class="btn primary">Sačuvaj</button></div></form>`)}
 function manualForm(empId,day,locId){locId=locId||adminLoc;modal('Ručna evidencija / ispravka',`<form id="manualForm" class="grid"><div class="fields"><div class="field"><label>Radnik *</label><select name="empId" required><option value="">Izaberi radnika</option>${S.employees.map(e=>`<option value="${e.id}" ${empId===e.id?'selected':''}>${esc(e.name)}</option>`).join('')}</select></div><div class="field"><label>Objekat</label><select name="locId">${selections(locId)}</select></div><div class="field"><label>Datum</label><input type="date" name="date" required value="${esc(day||today())}"></div></div><div class="field"><label>Šta želiš evidentirati?</label><select name="type" id="manualType"><option value="P">Prisutan – bez preciznog vremena</option><option value="IN">Dolazak – tačno vrijeme</option><option value="OUT">Odlazak – tačno vrijeme</option><option value="GO">Godišnji odmor</option><option value="BO">Bolovanje</option><option value="ND">Slobodan dan</option><option value="N">Nema prijave – potrebna provjera</option><option value="IA">Potvrđeno da nije došao na posao</option><option value="CLEAR">Ukloni ručnu oznaku dana</option></select></div><div class="field" id="manualTime" style="display:none"><label>Stvarno vrijeme događaja (24h)</label><input type="text" inputmode="numeric" maxlength="5" autocomplete="off" placeholder="HH:MM" pattern="([01][0-9]|2[0-3]):[0-5][0-9]" title="Vrijeme 00:00–23:59 (bez AM/PM), npr. 14:30" name="time" value="${pad(new Date().getHours())}:${pad(new Date().getMinutes())}"></div><div class="field"><label>Napomena (opcionalno)</label><textarea name="note" rows="2" placeholder="Razlog ručne izmjene..."></textarea></div><div class="modalfoot"><button type="button" class="btn" data-act="close-modal">Odustani</button><button type="submit" class="btn primary">Sačuvaj evidenciju</button></div></form>`)}
 
 function holidayForm(id){
@@ -202,12 +202,15 @@ if(f.getAttribute('id')==='loginForm'){let h=await hashPass(d.password,S.admin.s
 if(!unlocked)throw Error('Prijavi se kao administrator.');
 if(f.getAttribute('id')==='workerForm'){d.shiftStart=read24Hour(d.shiftStart,'Početak smjene zaposlenog',true);let nm=d.name.trim(),barcode=d.barcode.trim(),hired=d.hiredAt;if(!nm||!barcode)throw Error('Nedostaju ime ili barkod.');if(S.employees.some(e=>e.barcode.toLowerCase()===barcode.toLowerCase()&&e.id!==d.id))throw Error('Barkod već pripada drugom radniku.');if(d.terminatedAt&&hired&&d.terminatedAt<hired)throw Error('Datum završetka ne može biti prije početka rada.');
  if(d.leaveQuota!==''&&(!Number.isInteger(Number(d.leaveQuota))||Number(d.leaveQuota)<0||Number(d.leaveQuota)>90))throw Error('Neispravan broj dana godišnjeg odmora.');
- if(d.leaveCarry!==''&&(!Number.isInteger(Number(d.leaveCarry))||Math.abs(Number(d.leaveCarry))>90))throw Error('Neispravan saldo godišnjeg odmora.');
+ if(d.leaveCarry!==''&&(!Number.isInteger(Number(d.leaveCarry))||Math.abs(Number(d.leaveCarry))>90))throw Error('Neispravan saldo godišnjeg odmora.');if(d.leaveCarryDeadline&&(!/^\d{4}-\d\d-\d\d$/.test(d.leaveCarryDeadline)||d.leaveCarryDeadline<String(new Date().getFullYear())+'-01-01'||d.leaveCarryDeadline>String(new Date().getFullYear()+2)+'-12-31'))throw Error('Neispravan datum važenja prenosa.');
  let e=S.employees.find(x=>x.id===d.id);if(e){let oldLoc=e.defaultLocationId;if(oldLoc!==d.defaultLocationId){e.assignments||=[{from:e.hiredAt||'1900-01-01',locationId:oldLoc}];e.assignments=e.assignments.filter(x=>x.from!==today());e.assignments.push({from:today(),locationId:d.defaultLocationId})}Object.assign(e,{name:nm,barcode,defaultLocationId:d.defaultLocationId,hiredAt:hired,terminatedAt:d.terminatedAt||'',active:!!f.elements.active.checked,defaultShift:d.defaultShift||'',attendanceFrom:d.attendanceFrom||today(),shiftStart:d.shiftStart||'',paidHours:Number(d.paidHours)||0,isTest:!!f.elements.isTest.checked,hidden:!!f.elements.hidden.checked,needsSetup:false,barcodeAssigned:true});
  e.leaveQuotaByYear||={};e.leaveCarryByYear||={};
  if(d.leaveQuota!=='')e.leaveQuotaByYear[new Date().getFullYear()]=Number(d.leaveQuota);else delete e.leaveQuotaByYear[new Date().getFullYear()];
- if(d.leaveCarry!=='')e.leaveCarryByYear[new Date().getFullYear()]=Number(d.leaveCarry);else delete e.leaveCarryByYear[new Date().getFullYear()]}else{S.employees.push({id:uid(),name:nm,barcode,defaultLocationId:d.defaultLocationId,assignments:[{from:hired,locationId:d.defaultLocationId}],hiredAt:hired,terminatedAt:d.terminatedAt||'',active:!!f.elements.active.checked,defaultShift:d.defaultShift||'',attendanceFrom:d.attendanceFrom||today(),shiftStart:d.shiftStart||'',paidHours:Number(d.paidHours)||0,isTest:!!f.elements.isTest.checked,hidden:!!f.elements.hidden.checked,leaveQuotaByYear:d.leaveQuota===''?{}:{[new Date().getFullYear()]:Number(d.leaveQuota)},leaveCarryByYear:d.leaveCarry===''?{}:{[new Date().getFullYear()]:Number(d.leaveCarry)},barcodeAssigned:true,createdAt:new Date().toISOString()})}audit(e?'Izmijenjen radnik':'Dodat radnik',nm);await save();closeModal();render();return}
-if(f.getAttribute('id')==='locationForm'){d.open=read24Hour(d.open,'Otvaranje');d.close=read24Hour(d.close,'Zatvaranje');for(const [field,label] of [['firstStart','Početak prve smjene'],['firstEnd','Završetak prve smjene'],['secondStart','Početak druge smjene'],['secondEnd','Završetak druge smjene']])d[field]=read24Hour(d[field],label,true);let l=S.locations.find(x=>x.id===d.id),days=[0,1,2,3,4,5,6].filter(i=>f.elements['day'+i].checked),sc={id:uid(),from:d.from,open:d.open,close:d.close,grace:Number(d.grace)||0,paidHours:Number(d.paidHours)||0,days,
+ if(d.leaveCarry!=='')e.leaveCarryByYear[new Date().getFullYear()]=Number(d.leaveCarry);else delete e.leaveCarryByYear[new Date().getFullYear()];e.leaveCarryDeadlineByYear||={};if(d.leaveCarryDeadline)e.leaveCarryDeadlineByYear[new Date().getFullYear()]=d.leaveCarryDeadline;else delete e.leaveCarryDeadlineByYear[new Date().getFullYear()]}else{S.employees.push({id:uid(),name:nm,barcode,defaultLocationId:d.defaultLocationId,assignments:[{from:hired,locationId:d.defaultLocationId}],hiredAt:hired,terminatedAt:d.terminatedAt||'',active:!!f.elements.active.checked,defaultShift:d.defaultShift||'',attendanceFrom:d.attendanceFrom||today(),shiftStart:d.shiftStart||'',paidHours:Number(d.paidHours)||0,isTest:!!f.elements.isTest.checked,hidden:!!f.elements.hidden.checked,leaveQuotaByYear:d.leaveQuota===''?{}:{[new Date().getFullYear()]:Number(d.leaveQuota)},leaveCarryByYear:d.leaveCarry===''?{}:{[new Date().getFullYear()]:Number(d.leaveCarry)},leaveCarryDeadlineByYear:d.leaveCarryDeadline?{[new Date().getFullYear()]:d.leaveCarryDeadline}:{},barcodeAssigned:true,createdAt:new Date().toISOString()})}audit(e?'Izmijenjen radnik':'Dodat radnik',nm);await save();closeModal();render();return}
+if(f.getAttribute('id')==='locationForm'){d.open=read24Hour(d.open,'Otvaranje');d.close=read24Hour(d.close,'Zatvaranje');for(const [field,label] of [['firstStart','Početak prve smjene'],['firstEnd','Završetak prve smjene'],['secondStart','Početak druge smjene'],['secondEnd','Završetak druge smjene']])d[field]=read24Hour(d[field],label,true);let l=S.locations.find(x=>x.id===d.id);const prior=l?getSchedule(l.id,d.from):null;
+ // Prva smjena koja je ranije bila jednaka otvaranju prati novu sezonu.
+ if(prior?.firstStart&&prior.firstStart===prior.open&&d.firstStart===prior.firstStart&&d.open!==prior.open)d.firstStart=d.open;
+ let days=[0,1,2,3,4,5,6].filter(i=>f.elements['day'+i].checked),sc={id:uid(),from:d.from,open:d.open,close:d.close,grace:Number(d.grace)||0,paidHours:Number(d.paidHours)||0,days,
  firstStart:d.firstStart||'',firstEnd:d.firstEnd||'',secondStart:d.secondStart||'',secondEnd:d.secondEnd||''};if(!days.length)throw Error('Izaberi barem jedan radni dan.');
  if(minutes(d.close)<=minutes(d.open))throw Error('Zatvaranje mora biti nakon otvaranja. Za noćne smjene to treba posebno proširenje.');
  for(const [start,end,label] of [[d.firstStart,d.firstEnd,'Prva'],[d.secondStart,d.secondEnd,'Druga']]){
@@ -1008,15 +1011,29 @@ function shiftInfo(employee,date,locId){
  const selected=dayMode&&dayMode!=='inherit'?dayMode:employee.defaultShift||'';
  const manual=employee.shiftCalendar?.[date]||'';
  if(dayMode==='custom'&&manual)return {start:manual,end:'',label:'Posebna smjena'};
- if(selected==='first'&&schedule?.firstStart)return {start:schedule.firstStart,end:schedule.firstEnd||'',label:'Prva smjena'};
+ if(selected==='first'&&schedule?.open)return {start:schedule.firstStart||schedule.open,end:schedule.firstEnd||'',label:'Prva smjena'};
  if(selected==='second'&&schedule?.secondStart)return {start:schedule.secondStart,end:schedule.secondEnd||'',label:'Druga smjena'};
  if(manual)return {start:manual,end:'',label:'Pojedinačna smjena'};
- if((selected==='custom'||!selected)&&employee.shiftStart)return {start:employee.shiftStart,end:'',label:'Individualni raspored'};
- return {start:'',end:'',label:'Smjena nije podešena'};
+ if(selected==='custom')return {start:employee.shiftStart||'',end:'',label:employee.shiftStart?'Posebna smjena':'Posebna smjena nije podešena'};
+ if(selected==='second')return {start:'',end:'',label:'Druga smjena nije podešena u objektu'};
+ // Starije kartice: ako sacuvani sat odgovara nekadasnjem objektu ili smjeni,
+ // pratimo sezonu. Stvarno razliciti pojedinacni termini ostaju sacuvani.
+ if(!selected&&employee.shiftStart){
+  const old=S.locations.find(l=>l.id===location)?.schedules?.filter(x=>x.from<=date)||[];
+  if(old.some(x=>x.secondStart===employee.shiftStart)&&schedule?.secondStart)
+   return {start:schedule.secondStart,end:schedule.secondEnd||'',label:'Naslijedjena druga smjena'};
+  if(old.some(x=>x.firstStart===employee.shiftStart&&x.firstStart!==x.open)&&schedule?.firstStart)
+   return {start:schedule.firstStart,end:schedule.firstEnd||'',label:'Naslijedjena prva smjena'};
+  if(old.some(x=>x.open===employee.shiftStart||x.firstStart===employee.shiftStart&&x.firstStart===x.open)&&schedule?.open)
+   return {start:schedule.open,end:schedule.close||'',label:'Automatski · objekat'};
+  return {start:employee.shiftStart,end:'',label:'Ranije upisan poseban početak'};
+ }
+ if(!selected&&schedule?.open)return {start:schedule.open,end:schedule.close||'',label:'Automatski · objekat'};
+ return {start:'',end:'',label:'Radno vrijeme objekta nije podešeno'};
 }
 function plannedStart(employee,date,locId){return shiftInfo(employee,date,locId).start}
 function tardiness(employee,date,locId){
- const z=eventsDay(employee.id,locId,date),scheduled=plannedStart(employee,date),sc=getSchedule(locId,date);
+ const z=eventsDay(employee.id,locId,date),scheduled=plannedStart(employee,date,locId),sc=getSchedule(locId,date);
  if(!z.starts.length||!scheduled||!sc||!isWorking(locId,date)||holiday(locId,date,employee))return null;
  return Math.max(0,minutes(clock(z.starts[0].at))-minutes(scheduled)-Number(sc.grace||0));
 }
@@ -1232,7 +1249,7 @@ workers=function(){
  '<button class="btn primary" data-act="add-worker">+ Dodaj radnika</button><button class="btn" data-worker-toggle="1">'+(showAllStaff?'Sakrij neaktivne/testne':'Prikaži i neaktivne/testne')+'</button>')+
  '<section class="panel"><h2>Stanje godišnjeg odmora za '+year+'.</h2><div class="tablewrap"><table class="simpletable"><thead><tr><th>Radnik</th><th>Barkod</th><th>Objekat</th><th>Smjena</th><th>Pravo</th><th>Preneseno</th><th>Iskorišteno</th><th>Planirano</th><th>Preostalo</th><th>Opcije</th></tr></thead><tbody>'+
  (body||'<tr><td colspan="10">Nema zaposlenih u odabranom prikazu.</td></tr>')+'</tbody></table></div>'+
- '<p class="smalltext"><strong>Ako piše „Unesi pravo“, otvori Uredi za tog radnika i upiši pravo na godišnji za 2026. U kalendaru označavaj stvarno korištene dane kao GO.</strong> Godišnji se računa iz oznaka GO samo na planiranim radnim danima, bez praznika. P = ručna oznaka i ne daje sate. Preostalo = pravo + preneseno − iskorišteno − planirano. Zvjezdica označava privremeni saldo iz arhive 2025. koji treba provjeriti. Zakonski broj dana unosi administrator prema individualnom rješenju.</p></section>';
+ '<p class="smalltext"><strong>Ako piše „Unesi pravo“, otvori Uredi za tog radnika i upiši pravo na godišnji za 2026. U kalendaru označavaj stvarno korištene dane kao GO.</strong> Godišnji se računa iz oznaka GO samo na planiranim radnim danima, bez praznika. P = ručna oznaka i ne daje sate. Preostalo uključuje važeći prenos, iskorišćene, planirane i automatski prepoznate GO dane za provjeru. Zvjezdica označava privremeni saldo iz arhive 2025. koji treba provjeriti. Zakonski broj dana unosi administrator prema individualnom rješenju.</p></section>';
 };
 const _originalEnhancedReports=reports;
 reports=function(){
@@ -1694,6 +1711,7 @@ function annualObservedMonth(employee,date){
 const _annualOriginalStatus=dayStatus;
 function agreedAnnualCandidate(employee,date,location){
  if(!employee||!location||!agreedAnnualAutoOn(employee)||date>=today()||Number(date.slice(0,4))<2026)return false;
+ if(!employee.attendanceFrom||date<employee.attendanceFrom)return false;
  if(!employeeAt(employee,date)||assigned(employee,date)!==location||!isWorking(location,date))return false;
  if(holiday(location,date,employee)||sickLeaveAt(employee,date)||existingLeaveDay(employee.id,date))return false;
  if(evs(employee.id,location,date).length)return false;
@@ -1727,18 +1745,39 @@ leaveCount=function(id,year){
  return {...prior,autoDates:dates,autoDays:automatic,used:prior.used+automatic,
  reserved:prior.reserved+automatic,remaining:prior.g?prior.g.days-prior.reserved-automatic:null};
 };
+// Informativni obračun završenih mjeseci rada, ne zamjenjuje zakonski srazmjerni obračun.
+function balkanCompletedServiceMonths(employee,year,until){
+ const y=Number(year),hi=String(employee?.hiredAt||''),lo=String(employee?.terminatedAt||'');
+ const start=hi&&hi>ymd(y,1,1)?hi:ymd(y,1,1);
+ let end=ymd(y,12,31);if(until&&until<end)end=until;if(lo&&lo<end)end=lo;
+ if(end<start)return 0;
+ const dateStart=new Date(start+'T12:00:00Z'),endAfter=new Date(end+'T12:00:00Z');
+ endAfter.setUTCDate(endAfter.getUTCDate()+1);
+ let result=0;
+ for(let n=1;n<=12;n++){
+  const target=new Date(Date.UTC(dateStart.getUTCFullYear(),dateStart.getUTCMonth()+n,1,12));
+  const monthLast=new Date(Date.UTC(target.getUTCFullYear(),target.getUTCMonth()+1,0)).getUTCDate();
+  target.setUTCDate(Math.min(dateStart.getUTCDate(),monthLast));
+  if(target<=endAfter)result=n;else break;
+ }
+ return result;
+}
 function agreedAnnualTodaySummary(e,year){
  const y=Number(year),g=leaveGrant(e.id,y),current=today();
  const ref=ymd(y,1,1),loc=assigned(e,ref)||e.defaultLocationId;
  const six=g?.weekdays?.length===6||(!g&&getSchedule(loc,ref)?.days?.length===6);
  const full=annualEntitlementSuggestion(e,y,six?6:5);
- const upTo=annualEntitlementSuggestion(e,y,six?6:5,current);
  const quota=g?.days??(e.leaveQuotaByYear?.[y]!=null?Number(e.leaveQuotaByYear[y]):full.days);
- const entitledMonths=Math.max(1,full.months);
- const accrued=y>Number(current.slice(0,4))?0:y<Number(current.slice(0,4))?quota:Math.round(quota*Math.min(upTo.months,entitledMonths)/entitledMonths);
- const carry=Number(_annualPreviousYearLeaveSummary(e,y)?.carry??0),c=leaveCount(e.id,y);
- return{quota,accrued,months:upTo.months,carry,used:c.used,planned:c.upcoming,auto:c.autoDays||0,
- currentBalance:accrued+carry-c.used-c.upcoming,annualBalance:quota+carry-c.used-c.upcoming,confirmed:!!g};
+ const monthsNow=balkanCompletedServiceMonths(e,y,current);
+ const monthsInYear=balkanCompletedServiceMonths(e,y,ymd(y,12,31));
+ // Ako je godisnji fond vec srazmjerno utvrdjen (< punog minimuma), podijeli ga
+ // brojem mjeseci rada; puni fond 24/20 uvijek se dijeli sa 12 mjeseci.
+ const prorated=monthsInYear<12&&quota<full.base;
+ const monthlyRate=quota/(prorated&&monthsInYear?monthsInYear:12);
+ const accrued=y>Number(current.slice(0,4))?0:y<Number(current.slice(0,4))?quota:Math.min(quota,Math.round(monthlyRate*monthsNow));
+ const transfer=balkanCarryAudit(e,y),carry=transfer.raw,usableCarry=transfer.spentOnCarry+transfer.active+transfer.negative,c=leaveCount(e.id,y);
+ return{quota,accrued,months:monthsNow,carry,used:c.used,planned:c.upcoming,auto:c.autoDays||0,
+ currentBalance:accrued+usableCarry-c.used-c.upcoming,annualBalance:quota+usableCarry-c.used-c.upcoming,confirmed:!!g};
 }
 const _annualPriorPage=leavePage;
 leavePage=function(){
@@ -1786,6 +1825,147 @@ settings=function(){return _annualPriorGuide()
  .replace('N nije automatski godišnji.','N za protekli radni dan u popunjenom mjesecu računa se kao dogovoreni GO (od 2026) kada je opcija za radnika uključena. Izvorni podaci se ne brišu.')
  .replace('Program ne treba da automatski proglasi dan bez prijave neopravdanim izostankom ili godišnjim odmorom.','Automatski GO primjenjuje se samo na popunjene mjesece i dogovorenu opciju radnika. Pravne odluke i rješenja i dalje treba sačuvati.');
 };
+
+
+/* BALKAN – provjereni pregled godisnjeg odmora po radniku.
+   Nadogradnja na GitHub main 12866954191a65d9948086169164eb3e099a3f21.
+   Arhiva 2025. ostaje u postojecem history-2025.js; glavni Firebase tok je nepromijenjen.
+   Rok prenosa je informativna granica, osim kada je potvrđen zakonski izuzetak. */
+const _balkanLeaveSummaryBeforeCarryAudit=yearLeaveSummary;
+function balkanCarryAudit(employee,year,asOf=today()){
+ const y=Number(year),explicit=employee.leaveCarryByYear?.[y];
+ const archive=y===2026&&explicit==null?window.BALKAN_ARCHIVE?.getCarryover?.(employee.name):null;
+ const value=explicit==null?(archive?.balance??0):explicit;
+ const raw=Number.isFinite(Number(value))?Number(value):0;
+ const defaultDeadline=ymd(y,6,30);
+ const configured=employee.leaveCarryDeadlineByYear?.[y];
+ const deadline=/^\d{4}-\d\d-\d\d$/.test(String(configured||''))?configured:defaultDeadline;
+ const positive=Math.max(0,raw),negative=Math.min(0,raw);
+ const issued=(S.leaveDecisions||[]).filter(x=>x.empId===employee.id&&Number(x.year)===y&&x.status==='issued').flatMap(x=>x.days||[]);
+ const manual=manualLeaveDates(employee.id,y);
+ const automatic=agreedAnnualDates(employee,y);
+ const all=[...new Set([...issued,...manual,...automatic])].filter(date=>{
+  if(!/^\d{4}-\d\d-\d\d$/.test(date)||date.slice(0,4)!==String(y))return false;
+  const loc=assigned(employee,date);
+  if(!employeeAt(employee,date)||!loc||!isWorking(loc,date)||holiday(loc,date,employee)?.paid||sickLeaveAt(employee,date))return false;
+  if(S.events.some(v=>v.empId===employee.id&&v.kind==='in'&&dateOfEvent(v.at)===date))return false;
+  if(S.overrides.some(o=>o.empId===employee.id&&o.date===date&&o.status==='BO'))return false;
+  return true;
+ }).sort();
+ const spentOnCarry=Math.min(positive,all.filter(d=>d<=deadline).length);
+ const notSpent=positive-spentOnCarry;
+ const active=asOf<=deadline?notSpent:0;
+ const expired=asOf>deadline?notSpent:0;
+ return {raw,deadline,spentOnCarry,active,expired,negative,provisional:explicit==null&&!!archive,
+  known:explicit!=null||!!archive,source:explicit!=null?'ručni unos':archive?.source||'nema potvrđenog prenosa'};
+}
+function balkanLeaveDashboard(employee,year){
+ const existing=_balkanLeaveSummaryBeforeCarryAudit(employee,year);
+ const info=agreedAnnualTodaySummary(employee,year);
+ const carry=balkanCarryAudit(employee,year);
+ const used=existing.used,planned=existing.planned;
+ const correction=carry.spentOnCarry+carry.active+carry.negative;
+ const total=info.quota;
+ const accrued=info.accrued;
+ return {...existing,quota:total,accrued,used,planned,carry:carry.raw,
+  carryUsed:carry.spentOnCarry,carryActive:carry.active,carryExpired:carry.expired,
+  carryDeadline:carry.deadline,carrySource:carry.source,carryKnown:carry.known,
+  remaining:accrued+correction-used-planned,
+  annualRemaining:total+correction-used-planned,
+  provisional:carry.provisional||!info.confirmed&&employee.leaveQuotaByYear?.[year]==null,
+  rightConfirmed:!!leaveGrant(employee.id,Number(year))||employee.leaveQuotaByYear?.[year]!=null,
+  knownHire:!!employee.hiredAt};
+}
+yearLeaveSummary=function(employee,year){return balkanLeaveDashboard(employee,year)};
+
+const _balkanWorkerFormBeforeCarryDeadline=workerForm;
+workerForm=function(id){
+ _balkanWorkerFormBeforeCarryDeadline(id);
+ const f=document.getElementById('workerForm'),existing=S.employees.find(x=>x.id===id);
+ const field=f?.querySelector('input[name="leaveCarry"]')?.closest('.field');
+ if(!field)return;
+ const y=new Date().getFullYear();
+ const configured=existing?.leaveCarryDeadlineByYear?.[y];
+ const fallback=ymd(y,6,30);
+ const value=configured||fallback;
+ field.insertAdjacentHTML('beforeend',
+  '<label style="display:block;margin-top:10px">Važenje prenesenih dana do</label>'+
+  '<input name="leaveCarryDeadline" type="date" value="'+esc(value)+'" min="'+y+'-01-01" max="'+(y+2)+'-12-31">'+
+  '<small>Uobičajeni rok je 30. jun. Kasniji datum unesi samo za dokumentovani zakonski izuzetak (npr. odgovarajuće odsustvo). Negativan saldo je administrativna korekcija, a ne automatski dug radnika.</small>');
+};
+const _balkanWorkersBeforeAccruedTable=workers;
+workers=function(){
+ const original=_balkanWorkersBeforeAccruedTable();
+ const y=new Date().getFullYear(),todayStr=today();
+ const visible=S.employees.slice().filter(e=>showAllStaff||(!e.hidden&&!e.isTest&&e.active!==false)).sort((a,b)=>a.name.localeCompare(b.name,'bs'));
+ const fmt=v=>Number.isFinite(Number(v))?String(v):'—';
+ const rows=visible.map(e=>{
+  const d=yearLeaveSummary(e,y),status=d.rightConfirmed?'Potvrđen fond':'Procjena – potvrdi pravo';
+  const carryCell=(d.carry>0?'+':'')+fmt(d.carry)+(d.carrySource!=='ručni unos'?' *':'');
+  const transfer=d.carryActive>0?'<b>'+d.carryActive+'</b>':'0';
+  const warning=d.carryExpired>0?' · isteklo '+d.carryExpired:'';
+  return '<tr><td><b>'+esc(e.name)+'</b><br><small>'+esc(e.hiredAt||'Datum zaposlenja nije unesen')+'</small></td>'+
+   '<td>'+fmt(d.quota)+'</td><td><b>'+fmt(d.accrued)+'</b></td>'+
+   '<td>'+esc(carryCell)+'<br><small>Iz prenosa iskorišćeno: '+fmt(d.carryUsed)+'</small></td>'+
+   '<td>'+transfer+'<br><small>Rok '+esc(d.carryDeadline)+warning+'</small></td>'+
+   '<td>'+fmt(d.used)+'</td><td>'+fmt(d.autoLeave||0)+'</td><td>'+fmt(d.planned)+'</td>'+
+   '<td><b class="'+(d.remaining<0?'bad':'')+'">'+fmt(d.remaining)+'</b></td>'+
+   '<td>'+fmt(d.annualRemaining)+'</td>'+
+   '<td><small>'+esc(status)+(d.carryKnown?'':' · prenos nije potvrđen')+'</small></td></tr>';
+ }).join('');
+ const panel='<section class="panel" id="balkanLiveLeaveSummary"><h2>Godišnji odmori – obračun do '+esc(todayStr)+'</h2>'+
+ '<p class="smalltext">Radnici se preračunavaju pri svakom otvaranju. Za fond od 24 dana informativni presjek dodaje 2 dana nakon svakog završenog mjeseca rada. Ukupno zakonsko godišnje pravo ostaje prikazano zasebno. Dani bez prijave od početka barkod praćenja predlažu se kao godišnji u popunjenim mjesecima, uz mogućnost ispravke.</p>'+
+ '<div class="tablewrap"><table class="simpletable"><thead><tr><th>Radnik</th><th>Pravo '+y+'</th><th>Ostvareno do danas</th><th>Preneseno iz '+(y-1)+'</th><th>Još važi prenos</th><th>Iskorišćeno (ukupno)</th><th>Automatski GO (za provjeru)</th><th>Planirano</th><th>Saldo danas</th><th>Godišnji saldo</th><th>Provjera</th></tr></thead><tbody>'+
+ (rows||'<tr><td colspan="11">Nema radnika u ovom prikazu.</td></tr>')+'</tbody></table></div>'+
+ '<p class="smalltext">Saldo danas = ostvareno + važeći preostali prenos + već potrošeni dio prenosa − iskorišćeno (uključujući automatski GO za provjeru) − planirano ± negativna korekcija. Standardni rok prenosa je 30. jun, a kasniji rok unosi se u Uredi radnika samo kada postoji zakonski izuzetak. * = privremeni podatak iz arhive 2025. Potvrda fonda i prenosa je obavezna za službeni obračun; negativni saldo je upozorenje, ne automatska sankcija.</p></section>';
+ const pos=original.indexOf('<section class="panel">');
+ return pos>=0?original.slice(0,pos)+panel+original.slice(pos):original+panel;
+};
+
+
+// Skupna potvrda fonda bez prepisivanja posebnih prava i prenosa 2025.
+function balkanAnnualBulkCandidates(year){
+ const y=Number(year),now=today();
+ if(y!==new Date().getFullYear())return [];
+ return S.employees.filter(e=>e.active!==false&&!e.hidden&&!e.isTest&&
+  employeeAt(e,now)&&!leaveGrant(e.id,y)).map(e=>{
+  const ref=e.hiredAt&&e.hiredAt>ymd(y,1,1)?e.hiredAt:ymd(y,1,1);
+  const loc=assigned(e,ref),schedule=getSchedule(loc,ref);
+  const six=schedule?.days?.length===6,weekdays=six?[1,2,3,4,5,6]:[1,2,3,4,5];
+  const suggested=annualEntitlementSuggestion(e,y,six?6:5);
+  const entered=e.leaveQuotaByYear?.[y];
+  const total=entered==null?suggested.days:Number(entered);
+  return {e,total,weekdays,already:leaveCount(e.id,y).reserved,manual:entered!=null};
+ });
+}
+const _balkanAnnualPageBeforeBatch=leavePage;
+leavePage=function(){
+ const html=_balkanAnnualPageBeforeBatch(),pending=balkanAnnualBulkCandidates(leaveYear);
+ const eligible=pending.filter(x=>x.total>=x.already);
+ return html+'<section class="panel" id="balkanAnnualBulk"><h2>Godišnji fond za sve radnike</h2>'+
+ '<p>Program sam izračunava predlog na osnovu datuma zaposlenja i petodnevne ili šestodnevne radne sedmice objekta. Uvećanja i izuzeci ostaju individualni.</p>'+
+ '<button type="button" class="btn primary" data-balkan-annual-bulk="1" '+(!eligible.length?'disabled':'')+
+ '>Jednom potvrdi predloženi fond za '+eligible.length+' radnika · '+leaveYear+'</button>'+
+ (pending.length>eligible.length?'<p class="note info">'+(pending.length-eligible.length)+' radnika već ima više rezervisanih dana od prijedloga; provjeri ih zasebno.</p>':'')+
+ '<p class="smalltext">Već potvrđena prava i prenos iz arhive ne mijenjaju se. Prijedlog je informativan dok ne potvrdiš zakonski fond radnika.</p></section>';
+};
+document.getElementById('app').addEventListener('click',async event=>{
+ const b=event.target.closest('[data-balkan-annual-bulk]');if(!b)return;
+ event.preventDefault();event.stopImmediatePropagation();if(!unlocked)return;
+ const y=Number(leaveYear),list=balkanAnnualBulkCandidates(y);
+ const selected=list.filter(x=>x.total>=x.already);
+ if(!selected.length)return;
+ if(!confirm('Potvrditi obračunati fond za '+selected.length+' radnika za '+y+'. godinu? Već upisani fondovi ostaju nepromijenjeni.'))return;
+ ensureV2();
+ for(const x of selected){
+  if(leaveGrant(x.e.id,y))continue;
+  S.leaveGrants.push({id:uid(),empId:x.e.id,year:y,days:x.total,weekdays:x.weekdays,extraDays:0,
+   note:x.manual?'Ranije unesen individualni fond potvrđen skupno.':'Potvrđen predlog prema rasporedu i zaposlenju; provjeriti ugovorna uvećanja.',
+   source:'batch-confirmed',updatedAt:new Date().toISOString()});
+ }
+ audit('Skupna potvrda godišnjeg fonda',y+': '+selected.length+' radnika');
+ try{await save();render()}catch(err){alert('Godišnji fond nije potvrđeno sačuvan: '+err.message)}
+},true);
 
 // Firebase bootstrap only: the legacy interface is not activated before authentication.
 window.BALKAN_V6={
