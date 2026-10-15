@@ -1667,7 +1667,7 @@ dayStatus=function(employee,date,locId){
 /* balkan-user-guide-v1: administratorsko uputstvo, samo prikaz bez izmjene podataka. */
 const _balkanSettingsPriorToGuide=settings;
 settings=function(){
- return _balkanSettingsPriorToGuide()+\`
+ return _balkanSettingsPriorToGuide()+`
  <section class="panel" id="balkanUserGuide"><h2>📖 Uputstvo za korišćenje programa BALKAN</h2>
  <p class="smalltext">Ovo uputstvo opisuje postupak rada. Pravo na odmor i plate moraš provjeriti prema ugovoru, rasporedu i važećim propisima.</p>
  <div class="grid" style="grid-template-columns:repeat(auto-fit,minmax(245px,1fr));gap:16px">
@@ -1679,7 +1679,7 @@ settings=function(){
   <div><h3>6. Čuvanje i provjere</h3><p>Administracija koristi Firebase kada je status veze <b>povezan</b>. Sačekaj potvrdu uspješnog čuvanja nakon većih izmjena; po potrebi provjeri učitavanje nakon ponovnog ulaska. Redovno preuzimaj sigurnosnu kopiju. Arhiva 2025. služi za pregled ranijih podataka; nemoj pretvarati arhivirane podatke u skeniranja koja ne postoje.</p></div>
  </div>
  <div class="note info"><b>Važno:</b> Izvještaji pomažu pri evidenciji rada. Pojedinačno pravo na vjerski praznik, godišnji odmor i dodatne dane provjerava se na osnovu zakona i radnih akata. Program ne treba da automatski proglasi dan bez prijave neopravdanim izostankom ili godišnjim odmorom.</div>
- </section>\`;
+ </section>`;
 };
 
 // Firebase bootstrap only: the legacy interface is not activated before authentication.
