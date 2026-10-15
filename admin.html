@@ -521,9 +521,13 @@ function leaveDays(from,to,weekdays,excluded=[],empId=null){
  }return days;
 }
 function existingLeaveDay(empId,date){return S.leaveDecisions.find(x=>x.empId===empId&&x.status==='issued'&&(x.days||[]).includes(date))}
-function manualLeaveDates(empId,year){return [...new Set(S.overrides.filter(o=>o.empId===empId&&o.status==='GO'&&o.date.slice(0,4)===String(year)&&!existingLeaveDay(empId,o.date)).map(o=>o.date))];}
+function manualLeaveDates(empId,year){
+ const worker=S.employees.find(e=>e.id===empId);
+ if(!worker)return [];
+ return [...new Set(S.overrides.filter(o=>o.empId===empId&&o.status==='GO'&&o.date.slice(0,4)===String(year)&&!existingLeaveDay(empId,o.date)&&employeeAt(worker,o.date)&&isWorking(assigned(worker,o.date),o.date)&&!holiday(assigned(worker,o.date),o.date,worker)?.paid&&!sickLeaveAt(worker,o.date)).map(o=>o.date))];
+}
 function leaveCount(empId,year){
- let g=leaveGrant(empId,year),arr=S.leaveDecisions.filter(x=>x.empId===empId&&x.year===year&&x.status==='issued'),approved=[...new Set(arr.flatMap(x=>x.days||[]))],unlinked=manualLeaveDates(empId,year),reserved=[...new Set([...approved,...unlinked])];
+ let g=leaveGrant(empId,year),arr=S.leaveDecisions.filter(x=>x.empId===empId&&x.year===year&&x.status==='issued'),approved=[...new Set(arr.flatMap(x=>x.days||[]))].filter(date=>{const emp=S.employees.find(e=>e.id===empId);return emp&&employeeAt(emp,date)&&isWorking(assigned(emp,date),date)&&!holiday(assigned(emp,date),date,emp)?.paid&&!sickLeaveAt(emp,date)}),unlinked=manualLeaveDates(empId,year),reserved=[...new Set([...approved,...unlinked])];
  // Odobrava se po kalendarskoj godini na koju se pravo odnosi; budući dani nisu još iskorišćeni.
  let conflict=reserved.filter(date=>S.events.some(v=>v.empId===empId&&dateOfEvent(v.at)===date&&v.kind==='in')||S.overrides.some(o=>o.empId===empId&&o.date===date&&o.status==='BO'));
  let used=reserved.filter(d=>d<=today()&&!conflict.includes(d)).length,upcoming=reserved.filter(d=>d>today()).length;
@@ -1648,6 +1652,16 @@ document.getElementById('app').addEventListener('click',event=>{
  event.preventDefault();event.stopImmediatePropagation();
  if(unlocked)printAllWorkerCards();
 },true);
+
+
+const _legalHolidayDayStatus=dayStatus;
+dayStatus=function(employee,date,locId){
+ const h=holiday(locId,date,employee),sick=typeof sickLeaveAt==='function'&&sickLeaveAt(employee,date);
+ const hasArrival=evs(employee.id,locId,date).some(v=>v.kind==='in');
+ if(h?.paid===true&&employeeAt(employee,date)&&assigned(employee,date)===locId&&!hasArrival&&!sick&&override(employee.id,date,locId)?.status!=='BO')
+  return h.type==='religious'?'VH':'H';
+ return _legalHolidayDayStatus(employee,date,locId);
+};
 
 // Firebase bootstrap only: the legacy interface is not activated before authentication.
 window.BALKAN_V6={
