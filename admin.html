@@ -1663,6 +1663,25 @@ dayStatus=function(employee,date,locId){
  return _legalHolidayDayStatus(employee,date,locId);
 };
 
+
+/* balkan-user-guide-v1: administratorsko uputstvo, samo prikaz bez izmjene podataka. */
+const _balkanSettingsPriorToGuide=settings;
+settings=function(){
+ return _balkanSettingsPriorToGuide()+\`
+ <section class="panel" id="balkanUserGuide"><h2>📖 Uputstvo za korišćenje programa BALKAN</h2>
+ <p class="smalltext">Ovo uputstvo opisuje postupak rada. Pravo na odmor i plate moraš provjeriti prema ugovoru, rasporedu i važećim propisima.</p>
+ <div class="grid" style="grid-template-columns:repeat(auto-fit,minmax(245px,1fr));gap:16px">
+  <div><h3>1. Objekti i smjene</h3><p>U odjeljku <b>Objekti</b> postavi otvaranje, zatvaranje, radne dane, toleranciju prijave i normu sati za praznike. U <b>Radnici → Uredi</b> unesi uobičajeni početak smjene samo za radnike kojima želiš računati kašnjenje. Nije potrebno prepisivati vrijeme otvaranja objekta svakom radniku. Promjenu jedne smjene možeš unijeti klikom na dan u kalendaru.</p></div>
+  <div><h3>2. Barkod i prijavljivanje</h3><p>U odjeljku <b>Radnici</b> unesi stvarni barkod ili kreiraj novu šifru i sačuvaj radnika. Zatim klikni <b>Kartica</b> uz radnika ili <b>Štampaj kartice za sve radnike</b> za A4 štampu svih aktivnih i ispravno kodiranih kartica. Za prijavu ili odjavu koristi terminal za skeniranje.</p></div>
+  <div><h3>3. Kalendar i statusi</h3><p>Kalendar prikazuje cijeli mjesec. <b>P</b> je prisustvo, <b>N</b> nema potvrđene prijave, <b>GO</b> godišnji, <b>BO</b> bolovanje, <b>VH/PR</b> praznik. Klik na običan dan brzo mijenja P/N; detalji ispod kalendara služe za precizne ispravke. N nije automatski godišnji.</p></div>
+  <div><h3>4. Godišnji odmori</h3><p>U odjeljku <b>Godišnji odmori</b> odaberi radnika i godinu. Postavi ukupan fond, dodatne dane uz dokumentovan osnov i potvrdi ga. <b>Pregledaj i potvrdi dane</b> prikazuje dane bez prijave koje možeš pojedinačno, uz napomenu, označiti kao odobren godišnji. Program pokazuje iskorišteno, buduće odobrene dane i preostali fond, te omogućuje izradu rješenja.</p></div>
+  <div><h3>5. Praznici, bolovanja i izvještaji</h3><p>U <b>Praznici i odsustva</b> unesi naziv praznika, početak i kraj, vrstu i na koga se primjenjuje. Plaćeni praznici i bolovanje ne troše dane godišnjeg. U <b>Izvještaji</b> provjeri stvarne sate, obračunske sate praznika, nedovršene odjave i kašnjenja; nepoznato vrijeme nemoj popunjavati pretpostavkama.</p></div>
+  <div><h3>6. Čuvanje i provjere</h3><p>Administracija koristi Firebase kada je status veze <b>povezan</b>. Sačekaj potvrdu uspješnog čuvanja nakon većih izmjena; po potrebi provjeri učitavanje nakon ponovnog ulaska. Redovno preuzimaj sigurnosnu kopiju. Arhiva 2025. služi za pregled ranijih podataka; nemoj pretvarati arhivirane podatke u skeniranja koja ne postoje.</p></div>
+ </div>
+ <div class="note info"><b>Važno:</b> Izvještaji pomažu pri evidenciji rada. Pojedinačno pravo na vjerski praznik, godišnji odmor i dodatne dane provjerava se na osnovu zakona i radnih akata. Program ne treba da automatski proglasi dan bez prijave neopravdanim izostankom ili godišnjim odmorom.</div>
+ </section>\`;
+};
+
 // Firebase bootstrap only: the legacy interface is not activated before authentication.
 window.BALKAN_V6={
  boot:async()=>{await init(); if(!S.admin)S.admin={username:'Firebase administrator'};unlocked=true;route='pregled';S._sync={url:'',token:'',deviceId:S._sync?.deviceId||uid(),seeded:true,lastAt:null};S._pending=[];render()},
