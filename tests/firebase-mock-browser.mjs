@@ -86,12 +86,13 @@ assert.ok(await page.getByText('Još nije uvezena u Firebase').count(),'Absent a
 console.log('PASS Firebase mock browser: actual admin-firebase integration, remote verification indicator, archive fallback, Settings help');
 const kiosk=await context.newPage();await mockFirebase(kiosk);
 await kiosk.goto('http://127.0.0.1:8765/index.html',{waitUntil:'domcontentloaded'});
-await kiosk.waitForFunction(()=>document.querySelector('#status')?.textContent.includes('Skeniraj barkod'),{timeout:15000});
+await kiosk.waitForFunction(()=>document.querySelector('#status')?.textContent.includes('Spremno za skeniranje'),{timeout:15000});
 assert.equal(await kiosk.getByText('DOLAZAK').count()>0,true,'Public scanning UI');
 await kiosk.locator('#barcode').fill('TEST999');
 await kiosk.locator('#scanForm button[type=submit]').click();
-await kiosk.waitForFunction(()=>document.querySelector('#status')?.textContent.includes('Prijava NIJE evidentirana'),{timeout:10000});
+await kiosk.waitForFunction(()=>document.querySelector('#status')?.textContent.includes('Firebase odbija upis'),{timeout:10000});
 assert.ok(!(await kiosk.locator('#status').textContent()).includes('Potvrđeno u Firebase bazi'),'Rejected write never reports success');
+assert.equal(await kiosk.evaluate(()=>JSON.parse(localStorage.getItem('balkan_kiosk_outbox_v1')||'[]').length),1,'Failed upload stays in durable local queue');
 assert.equal(errors.length,0,'No page errors: '+errors.join(' / '));
 console.log('PASS Kiosk mocked server-denial: denies attendance and displays actual failure; no false confirmation');
 await browser.close();
