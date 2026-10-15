@@ -604,7 +604,7 @@ $('modal').addEventListener('submit',async e=>{let f=e.target;if(!['leaveGrantFo
  if(!days.length)throw Error('Period nema obračunskih radnih dana.');let duplicates=days.filter(x=>existingLeaveDay(d.empId,x)||S.overrides.some(o=>o.empId===d.empId&&o.date===x&&o.status==='GO'));if(duplicates.length)throw Error('Ovi datumi već postoje u drugom rješenju: '+duplicates.slice(0,10).join(', '));
  let conflicts=days.filter(date=>S.events.some(v=>v.empId===d.empId&&dateOfEvent(v.at)===date&&v.kind==='in')||S.overrides.some(o=>o.empId===d.empId&&o.date===date&&['BO','P','ND'].includes(o.status)));
  if(conflicts.length)throw Error('Period se preklapa sa postojećim prisustvom/bolovanjem/slobodnim danom: '+conflicts.slice(0,10).join(', ')+'. Prvo provjeri status.');
- let summary=leaveCount(d.empId,Number(d.year));if(days.length>summary.remaining)throw Error(`Previše dana (${days.length}). Preostalo za odobravanje: ${summary.remaining}.`);
+ let summary=leaveCount(d.empId,Number(d.year)),worker=S.employees.find(e=>e.id===d.empId);let increment=days.filter(date=>!agreedAnnualCandidate(worker,date,assigned(worker,date))).length;if(increment>summary.remaining)throw Error(`Previše novih dana (${increment}). Preostalo: ${summary.remaining}.`);
  let employee=S.employees.find(e=>e.id===d.empId),tpl=S.leaveTemplates.find(x=>x.id==='annual-main');if(days.some(x=>!employeeAt(employee,x)))throw Error('Godišnji odmor ne smije biti izvan perioda radnog odnosa tog radnika.');let issued={id:uid(),empId:d.empId,employeeName:employee.name,year:Number(d.year),number:d.number.trim(),from:d.from,to:d.to,days,excluded,status:'issued',issuedAt:d.issuedAt,deliveredAt:d.deliveredAt,shortNotice:!!f.elements.shortNotice.checked,position:d.position,residence:d.residence,contract:d.contract,entitlementAtIssue:g.days,remainingAtIssue:summary.remaining-days.length,templateSnapshot:structuredClone(tpl),createdAt:new Date().toISOString()};
  S.leaveDecisions.push(issued);
  // Podaci o radnom mjestu ostaju u evidenciji radnika; JMB se ne čuva.
@@ -1682,6 +1682,99 @@ settings=function(){
  </section>`;
 };
 
+
+function agreedAnnualAutoOn(employee){return employee?.autoMissingLeave!==false}
+function annualObservedMonth(employee,date){
+ const m=date.slice(0,7);
+ return (S.overrides||[]).some(o=>o.empId===employee.id&&o.date?.slice(0,7)===m&&['P','N','GO'].includes(o.status))||
+ (S.events||[]).some(v=>v.empId===employee.id&&v.kind==='in'&&dateOfEvent(v.at).slice(0,7)===m);
+}
+const _annualOriginalStatus=dayStatus;
+function agreedAnnualCandidate(employee,date,location){
+ if(!employee||!location||!agreedAnnualAutoOn(employee)||date>=today()||Number(date.slice(0,4))<2026)return false;
+ if(!employeeAt(employee,date)||assigned(employee,date)!==location||!isWorking(location,date))return false;
+ if(holiday(location,date,employee)||sickLeaveAt(employee,date)||existingLeaveDay(employee.id,date))return false;
+ if(evs(employee.id,location,date).length)return false;
+ const code=override(employee.id,date,location)?.status;
+ if(code&&code!=='N')return false;
+ if(!annualObservedMonth(employee,date))return false;
+ return _annualOriginalStatus(employee,date,location)==='N';
+}
+dayStatus=function(employee,date,location){
+ const status=_annualOriginalStatus(employee,date,location);
+ return status==='N'&&agreedAnnualCandidate(employee,date,location)?'GO':status;
+};
+function agreedAnnualDates(employee,year){
+ if(!employee||!agreedAnnualAutoOn(employee)||Number(year)<2026)return [];
+ const dates=[],y=Number(year);
+ for(let month=1;month<=12;month++){
+  const count=new Date(y,month,0).getDate(),first=ymd(y,month,1);
+  if(first>=today()||!annualObservedMonth(employee,first))continue;
+  for(let d=1;d<=count;d++){
+   const date=ymd(y,month,d);if(date>=today())break;
+   const location=assigned(employee,date);
+   if(agreedAnnualCandidate(employee,date,location))dates.push(date);
+  }
+ }
+ return dates;
+}
+const _annualPriorLeaveCount=leaveCount;
+leaveCount=function(id,year){
+ const prior=_annualPriorLeaveCount(id,year),e=S.employees.find(x=>x.id===id);
+ const dates=agreedAnnualDates(e,year),automatic=dates.length;
+ return {...prior,autoDates:dates,autoDays:automatic,used:prior.used+automatic,
+ reserved:prior.reserved+automatic,remaining:prior.g?prior.g.days-prior.reserved-automatic:null};
+};
+function agreedAnnualTodaySummary(e,year){
+ const y=Number(year),g=leaveGrant(e.id,y),current=today();
+ const ref=ymd(y,1,1),loc=assigned(e,ref)||e.defaultLocationId;
+ const six=g?.weekdays?.length===6||(!g&&getSchedule(loc,ref)?.days?.length===6);
+ const full=annualEntitlementSuggestion(e,y,six?6:5);
+ const upTo=annualEntitlementSuggestion(e,y,six?6:5,current);
+ const quota=g?.days??full.days;
+ const entitledMonths=Math.max(1,full.months);
+ const accrued=y>Number(current.slice(0,4))?0:y<Number(current.slice(0,4))?quota:Math.round(quota*Math.min(upTo.months,entitledMonths)/entitledMonths);
+ const carry=Number(e.leaveCarryByYear?.[y]??0),c=leaveCount(e.id,y);
+ return{quota,accrued,months:upTo.months,carry,used:c.used,planned:c.upcoming,auto:c.autoDays||0,
+ currentBalance:accrued+carry-c.used-c.upcoming,annualBalance:quota+carry-c.used-c.upcoming,confirmed:!!g};
+}
+const _annualPriorPage=leavePage;
+leavePage=function(){
+ const original=_annualPriorPage(),e=S.employees.find(x=>x.id===leaveEmployeeId);
+ if(!e)return original;
+ const d=agreedAnnualTodaySummary(e,leaveYear),enabled=agreedAnnualAutoOn(e);
+ const section='<section class="panel" id="balkanAnnualToday"><h2>Godišnji odmor – stanje do današnjeg datuma</h2>'+
+ '<div class="grid stats"><div class="stat blue"><div class="cap">Godišnji fond za godinu</div><div class="num">'+d.quota+'</div></div>'+
+ '<div class="stat green"><div class="cap">Informativno do danas</div><div class="num">'+d.accrued+'</div></div>'+
+ '<div class="stat"><div class="cap">Već korišteno</div><div class="num">'+d.used+'</div></div>'+
+ '<div class="stat orange"><div class="cap">Slobodno prema današnjem presjeku</div><div class="num">'+d.currentBalance+'</div></div>'+
+ '<div class="stat"><div class="cap">Godišnji saldo</div><div class="num">'+d.annualBalance+'</div></div></div>'+
+ '<p>Automatski prepoznatih dogovorenih dana bez prijave: <b>'+d.auto+'</b>.</p>'+
+ '<div class="actionline"><button type="button" class="btn '+(enabled?'danger':'primary')+'" data-agreed-leave-toggle="'+esc(e.id)+'">'+
+ (enabled?'Isključi automatski godišnji za radnika':'Uključi automatski godišnji za radnika')+'</button>'+
+ '<span class="smalltext">Način evidencije: '+(enabled?'UKLJUČEN':'ISKLJUČEN')+'. Originalni N i skeniranja ostaju sačuvani.</span></div>'+
+ '<p class="smalltext">Mjesečni obračun je informativni presjek ('+d.months+' mjeseci), nije umanjenje zakonskog prava zaposlenog za cijelu godinu. U saldo su uključeni ranije uneseni preneseni dani ('+d.carry+'), iskorišteni dani i buduće rezervacije. Praznici, bolovanje, slobodni dani i današnji još nezavršeni dan ne troše godišnji. Negativno stanje upozorava da je iskorišteno više od obračunatog.</p></section>';
+ return section+(enabled?original.replace(/<section class="panel"><h2>Provjera neoznačenih dana \/ godišnji odmor<\/h2>[\s\S]*?<\/section>/,''):original);
+};
+const _annualPriorDayPanel=dayPanel;
+dayPanel=function(employee,date,loc){
+ const original=_annualPriorDayPanel(employee,date,loc);
+ return agreedAnnualCandidate(employee,date,loc)?original+'<div class="note info"><b>Dogovoreni godišnji:</b> dan bez prijave u popunjenom mjesecu računa se u potrošeni godišnji. Izvorni status N je sačuvan. Za službenu dokumentaciju pripremi rješenje.</div>':original;
+};
+document.getElementById('app').addEventListener('click',async event=>{
+ const t=event.target.closest('[data-agreed-leave-toggle]');if(!t)return;
+ event.preventDefault();event.stopImmediatePropagation();if(!unlocked)return;
+ const employee=S.employees.find(e=>e.id===t.dataset.agreedLeaveToggle);if(!employee)return;
+ employee.autoMissingLeave=!agreedAnnualAutoOn(employee);
+ audit('Dogovoreni automatski GO',employee.name+': '+(agreedAnnualAutoOn(employee)?'uključeno':'isključeno'));
+ try{await save();render()}catch(err){alert('Nije potvrđeno čuvanje: '+err.message)}
+},true);
+const _annualPriorGuide=settings;
+settings=function(){return _annualPriorGuide()
+ .replace('N nije automatski godišnji.','N za protekli radni dan u popunjenom mjesecu računa se kao dogovoreni GO (od 2026) kada je opcija za radnika uključena. Izvorni podaci se ne brišu.')
+ .replace('Program ne treba da automatski proglasi dan bez prijave neopravdanim izostankom ili godišnjim odmorom.','Automatski GO primjenjuje se samo na popunjene mjesece i dogovorenu opciju radnika. Pravne odluke i rješenja i dalje treba sačuvati.');
+};
+
 // Firebase bootstrap only: the legacy interface is not activated before authentication.
 window.BALKAN_V6={
  boot:async()=>{await init(); if(!S.admin)S.admin={username:'Firebase administrator'};unlocked=true;route='pregled';S._sync={url:'',token:'',deviceId:S._sync?.deviceId||uid(),seeded:true,lastAt:null};S._pending=[];render()},
@@ -1700,4 +1793,4 @@ window.BALKAN_V6={
  backup:()=>doExport(),
  defaultState:()=>defaultState()
 };
-</script><script type="module" src="./admin-firebase.js?v=20261015annualv1"></script></body></html>
+</script><script type="module" src="./admin-firebase.js?v=20261015annualv2"></script></body></html>
