@@ -35,7 +35,7 @@ try{
   const july=annualEntitlementSuggestion({...employee,hiredAt:'2026-07-01'},2026,5);
   const holidays=[holiday('m1','2026-10-07',employee)?.type,holiday('m1','2026-10-08',employee)?.type];
   const goDays=leaveDays('2026-10-05','2026-10-10',[1,2,3,4,5,6],[],employee.id);
-  const overlap={status:dayStatus(employee,'2026-10-08','m1'),used:leaveCount(employee.id,2026).used};
+  const overlap={status:dayStatus(employee,'2026-10-08','m1'),used:leaveCount(employee.id,2026).used,holidayAuto:agreedAnnualCandidate(employee,'2026-10-08','m1')};
   const candidates=likelyLeaveReviewDays(employee,2026);
   const before=data.overrides.length;
   window.BALKAN_V6.render();
@@ -46,7 +46,8 @@ try{
  assert.equal(logic.july.days,10,'Started in July, half year');
  assert.deepEqual(logic.holidays,['religious','religious'],'Both days identified');
  assert.equal(logic.overlap.status,'VH','Paid holiday visible even when legacy GO override exists');
- assert.equal(logic.overlap.used,0,'Holiday GO overlap must not consume annual leave');
+ assert.equal(logic.overlap.holidayAuto,false,'Paid holiday must not become automatic leave');
+ assert.ok(logic.overlap.used>0,'Agreed no-show workdays counted automatically');
  assert.ok(!logic.goDays.includes('2026-10-07')&&!logic.goDays.includes('2026-10-08'),'Holiday excluded from annual leave');
  assert.ok(logic.candidates.includes('2026-10-06'),'Unscanned working day proposed');
  assert.ok(!logic.candidates.includes('2026-10-07'),'Holiday not proposed as vacation');
@@ -64,6 +65,8 @@ try{
  await page.locator('#balkanLeaveReviewForm button[type=submit]').click();
  await page.waitForFunction(()=>window.BALKAN_V6.state().overrides.some(o=>o.id!=='audit-present'&&o.empId==='audit-vacation'&&o.date==='2026-10-06'&&o.status==='GO'));
  const after=await page.evaluate(()=>window.BALKAN_V6.state().overrides);
+ const afterCount=await page.evaluate(()=>leaveCount('audit-vacation',2026).used);
+ assert.equal(afterCount,logic.overlap.used,'Converting an automatic day to approved GO must not double count');
  assert.ok(after.some(o=>o.empId==='audit-vacation'&&o.date==='2026-10-05'&&o.status==='P'),'Existing marked presence preserved');
  assert.ok(after.some(o=>o.empId==='audit-vacation'&&o.date==='2026-10-06'&&o.status==='GO'),'Confirmed day becomes GO');
  assert.ok(!after.some(o=>o.empId==='audit-vacation'&&o.date==='2026-10-07'&&o.status==='GO'),'Holiday remains unmodified');
