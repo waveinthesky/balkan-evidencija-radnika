@@ -1736,9 +1736,9 @@ function agreedAnnualTodaySummary(e,year){
  const quota=g?.days??(e.leaveQuotaByYear?.[y]!=null?Number(e.leaveQuotaByYear[y]):full.days);
  const entitledMonths=Math.max(1,full.months);
  const accrued=y>Number(current.slice(0,4))?0:y<Number(current.slice(0,4))?quota:Math.round(quota*Math.min(upTo.months,entitledMonths)/entitledMonths);
- const carry=Number(_annualPreviousYearLeaveSummary(e,y)?.carry??0),c=leaveCount(e.id,y);
+ const transfer=balkanCarryAudit(e,y),carry=transfer.raw,usableCarry=transfer.spentOnCarry+transfer.active+transfer.negative,c=leaveCount(e.id,y);
  return{quota,accrued,months:upTo.months,carry,used:c.used,planned:c.upcoming,auto:c.autoDays||0,
- currentBalance:accrued+carry-c.used-c.upcoming,annualBalance:quota+carry-c.used-c.upcoming,confirmed:!!g};
+ currentBalance:accrued+usableCarry-c.used-c.upcoming,annualBalance:quota+usableCarry-c.used-c.upcoming,confirmed:!!g};
 }
 const _annualPriorPage=leavePage;
 leavePage=function(){
