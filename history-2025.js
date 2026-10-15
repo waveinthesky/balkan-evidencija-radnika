@@ -4,6 +4,12 @@ const escape=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>'
 const norm=s=>String(s||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/[^a-z0-9]/gi,'').toLowerCase();
 const ref=db=>doc(db,'records','archive2025','items','year2025');
 export async function load(db){let s=await getDocFromServer(ref(db));archive=s.exists()?s.data():null;return archive}
+export function carryoverFor2026(workerName){
+ if(!archive?.workers||!workerName)return null;
+ const w=archive.workers.find(e=>norm(e.name)===norm(workerName));
+ const balance=Number(w?.excelRemaining);
+ return w&&Number.isFinite(balance)?{balance,source:'Excel 2025',provisional:true}:null;
+}
 export function settings(){return '<section class="panel"><h2>Uvoz arhive 2025.</h2><p>Istorijski podaci nisu javni: privatni JSON uvozi se jednom, samo nakon prijave administratora.</p><form id="histImport"><input type="file" name="file" accept=".json,application/json" required><button type="submit" class="btn primary">Uvezi 2025. i radnike 2026.</button></form></section>'}
 export function display(){
  if(!archive)return '<section class="panel"><h2>Arhiva 2025.</h2><p>Još nije uvezena u Firebase.</p></section>';
