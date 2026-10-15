@@ -49,3 +49,4 @@ jobs:
           node tests/firebase-mock-browser.mjs
           node tests/calculations.mjs
           node tests/shifts-leave-dashboard.mjs
+          node tests/lateness-color-dashboard.mjs
