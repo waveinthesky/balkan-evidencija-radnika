@@ -54,8 +54,8 @@ assert.equal(await page.locator('#balkanWorkerManagement').getByText('Skriveni P
 await page.locator('[data-worker-toggle]').click();
 assert.ok(await page.getByText('Skriveni Probni').count(),'Hidden staff displayed on demand');
 await page.locator('tr').filter({hasText:'Skriveni Probni'}).locator('[data-worker-delete]').click();
-await page.waitForFunction(()=>!Array.from(document.querySelectorAll('table tr')).some(tr=>tr.textContent.includes('Skriveni Probni')),{timeout:6000});
-assert.equal(await page.getByText('Skriveni Probni').count(),0,'Test worker without records deleted');
+await page.waitForFunction(()=>!window.BALKAN_V6.state().employees.some(e=>e.id==='hidden-emp'),{timeout:6000});
+await page.locator('#balkanWorkerManagement tr').filter({hasText:'Skriveni Probni'}).waitFor({state:'detached',timeout:6000});
 await page.locator('tr').filter({hasText:'Povezani Radnik'}).locator('[data-worker-delete]').click();
 assert.ok(await page.getByText('Povezani Radnik').count(),'Worker with scan history protected from deletion');
 await page.getByRole('button',{name:/Objekti/}).first().click();

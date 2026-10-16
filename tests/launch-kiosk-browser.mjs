@@ -99,6 +99,27 @@ try{
  await page.locator('#queueRetry').click();
  await page.waitForFunction(()=>JSON.parse(localStorage.getItem('balkan_kiosk_outbox_v1')||'[]').filter(x=>x.flag!=='review').length===0);
  assert.equal((await items()).length,1,'Only invalid card remains for manual review');
+ // HID-scanner simulation: focus lost after pressing a button; no click on barcode field.
+ await page.locator('#modeIn').click();
+ await page.locator('#queueRetry').focus();
+ assert.notEqual(await page.evaluate(()=>document.activeElement?.id),'barcode');
+ await page.keyboard.type('MARKET2',{delay:4});
+ assert.equal(await page.locator('#barcode').inputValue(),'MARKET2','Whole scan redirected into barcode without missing first letter');
+ await page.keyboard.press('Enter');
+ await page.waitForFunction(()=>globalThis.__writes?.length===4,{timeout:10000});
+ assert.equal((await written())[3].value.kind,'in','Enter from USB scanner submits automatically');
+ assert.equal((await written())[3].value.empId,'e2');
+ // Tab is also a common barcode scanner suffix.
+ await page.locator('#modeOut').click();
+ await page.locator('#queueRetry').focus();
+ await page.keyboard.type('MARKET2',{delay:3});
+ await page.keyboard.press('Tab');
+ await page.waitForFunction(()=>globalThis.__writes?.length===5,{timeout:10000});
+ assert.equal((await written())[4].value.kind,'out','Tab suffix submits barcode');
+ assert.equal((await items()).length,1,'Scanner focus recovery does not alter review records');
+ await page.reload({waitUntil:'domcontentloaded'});
+ await page.waitForFunction(()=>document.activeElement?.id==='barcode',{timeout:5000});
+
  assert.deepEqual(errors,[],'No browser errors '+errors.join('; '));
- console.log('PASS OFFLINE KIOSK: online scan, duplicates, offline scans, offline reload via service worker, original times/ids, automatic Firebase sync, review queue, permission error, manual retry.');
+ console.log('PASS OFFLINE KIOSK & SCANNER: offline queue, automatic resync, Enter/Tab suffix when focus on another button, first scan character intact, autofocus on reload.');
 }finally{await browser.close()}

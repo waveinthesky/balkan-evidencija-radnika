@@ -50,7 +50,52 @@ function setMode(value){
  $('modeOut').className='mode'+(value==='out'?' out':'');
  focus();
 }
-function focus(){setTimeout(()=>$('barcode')?.focus(),0)}
+function focus(){
+ // Kasa koristi USB/Bluetooth čitač kao tastaturu; fokus mora biti na barkodu.
+ setTimeout(()=>{
+  const input=$('barcode');
+  if(input&&!input.disabled&&!document.hidden){
+   try{input.focus({preventScroll:true})}catch{input.focus()}
+  }
+ },0);
+}
+// Pojedini skeneri rade kao fizička tastatura i nakon klika na dugme ili prazan dio
+// stranice pišu u trenutno aktivni element. Preusmjeri samo njihove obične znakove;
+// ne presreći prečice preglednika niti unos u druga polja.
+document.addEventListener('keydown',event=>{
+ const input=$('barcode');
+ if(!input||input.disabled||document.hidden||event.defaultPrevented||event.isComposing||
+    event.altKey||event.ctrlKey||event.metaKey)return;
+ const fromBarcode=event.target===input;
+ const otherField=event.target?.closest?.('input,textarea,select,[contenteditable="true"]');
+ if(fromBarcode){
+  if(event.key==='Tab'&&input.value.trim()){
+   event.preventDefault();
+   input.form.requestSubmit();
+  }
+  return;
+ }
+ if(otherField)return;
+ if((event.key==='Enter'||event.key==='Tab')&&input.value.trim()){
+  event.preventDefault();
+  input.focus({preventScroll:true});
+  input.form.requestSubmit();
+  return;
+ }
+ if(event.key.length===1){
+  // Upisujemo i prvi znak, koji bi inače završio na dugmetu ili se izgubio.
+  event.preventDefault();
+  input.focus({preventScroll:true});
+  const start=input.selectionStart??input.value.length;
+  const end=input.selectionEnd??input.value.length;
+  input.setRangeText(event.key,start,end,'end');
+  input.dispatchEvent(new Event('input',{bubbles:true}));
+ }
+},true);
+document.addEventListener('click',event=>{
+ if(!event.target?.closest?.('a,input,textarea,select,[contenteditable="true"]'))focus();
+});
+window.addEventListener('focus',focus);
 function statusConnection(){
  connection(navigator.onLine?'Internet dostupan – provjera Firebase veze pri slanju':'Bez interneta – lokalno čuvanje',navigator.onLine);
  showQueue();
