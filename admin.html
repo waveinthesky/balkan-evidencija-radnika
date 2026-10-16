@@ -1638,8 +1638,33 @@ document.getElementById('modal').addEventListener('submit',async event=>{
 },true);
 
 
-function printableWorkerCards(){
- return (S.employees||[]).filter(e=>!e.isTest&&!e.hidden&&e.active!==false&&e.barcode&&e.barcodeAssigned!==false&&!/^(NEPOSTAVLJENO|BEZ-KARTICE)-/i.test(e.barcode)&&/^[0-9A-Z .\-$\/+%]+$/i.test(e.barcode));
+// Kartice se nikada ne stampaju s privremenim, duplim ili neispravnim kodom.
+function balkanCardReason(e){
+ if(e.isTest)return 'Testni radnik';
+ if(e.hidden)return 'Skriven radnik';
+ if(e.active===false)return 'Neaktivan radnik';
+ if(e.hiredAt&&e.hiredAt>today())return 'Radnik još nije počeo raditi';
+ if(e.terminatedAt&&e.terminatedAt<today())return 'Radni odnos je završen';
+ const location=assigned(e,today());
+ if(!location||!S.locations.some(l=>l.id===location))return 'Nije dodijeljen objekat';
+ const code=String(e.barcode||'').trim().toUpperCase();
+ if(!code||/^(NEPOSTAVLJENO|BEZ-KARTICE)-/i.test(code)||e.barcodeAssigned===false)return 'Barkod još nije dodijeljen';
+ if(!/^[0-9A-Z .\-$\/+%]+$/.test(code))return 'Barkod sadrži znakove koje Code 39 ne podržava';
+ if((S.employees||[]).some(x=>x.id!==e.id&&String(x.barcode||'').trim().toUpperCase()===code))return 'Barkod se ponavlja kod drugog radnika';
+ return '';
+}
+function printableWorkerCards(){return (S.employees||[]).filter(e=>!balkanCardReason(e))}
+function balkanCardCandidates(){
+ return (S.employees||[]).filter(e=>!e.isTest&&!e.hidden&&e.active!==false&&
+  (!e.hiredAt||e.hiredAt<=today())&&(!e.terminatedAt||e.terminatedAt>=today())&&
+  /Barkod/.test(balkanCardReason(e)));
+}
+function balkanNewWorkerCode(used){
+ for(let i=0;i<30;i++){
+  const code='BK'+uid().replace(/[^0-9a-z]/gi,'').toUpperCase().slice(0,15);
+  if(/^[A-Z0-9]+$/.test(code)&&code.length>=12&&!used.has(code)){used.add(code);return code}
+ }
+ throw Error('Ne mogu dobiti jedinstven barkod. Nije bilo izmjena.');
 }
 function printAllWorkerCards(){
  const employees=printableWorkerCards();
@@ -1658,18 +1683,43 @@ function printAllWorkerCards(){
 const _workersWithAllCards=workers;
 workers=function(){
  const original=_workersWithAllCards();
- const eligible=printableWorkerCards().length;
- return original.replace('<section class="panel" id="balkanWorkerManagement">',
- '<section class="panel" id="balkanWorkerManagement"><div class="actionline" style="margin-bottom:12px">'+
- '<button class="btn primary" type="button" data-print-all-workers="1">⎙ Štampaj kartice za sve radnike ('+eligible+')</button>'+
- '<span class="smalltext">Svaka kartica ima ime i važeći barkod. Testne i kartice bez stvarnog koda ne štampamo.</span></div>')
- .replace(/(<button class="btn small" data-edit-worker="([^"]+)">Uredi<\/button>)/g,
+ const employees=S.employees||[],eligible=printableWorkerCards().length;
+ const rejected=employees.filter(e=>balkanCardReason(e)),candidates=balkanCardCandidates();
+ const skipped=rejected.map(e=>'<tr><td>'+esc(e.name||'Bez imena')+'</td><td>'+esc(balkanCardReason(e))+'</td><td><button class="btn small" data-edit-worker="'+esc(e.id)+'">Uredi</button></td></tr>').join('');
+ const info='<div class="actionline" style="margin-bottom:12px">'+
+ '<button class="btn primary" type="button" data-print-all-workers="1" '+(!eligible?'disabled':'')+'>⎙ Štampaj kartice ('+eligible+')</button>'+
+ (candidates.length?'<button class="btn" type="button" data-balkan-issue-cards="1">Dodijeli barkod za '+candidates.length+' radnika</button>':'')+
+ '<span class="smalltext">Spremno za štampu: <b>'+eligible+' od '+employees.length+'</b> radnika.</span></div>'+
+ (rejected.length?'<details id="balkanSkippedCards"><summary>Zašto '+rejected.length+' radnika nije uključeno u štampu?</summary>'+
+ '<p class="smalltext">Samo aktivni, vidljivi, stvarni radnici sa jedinstvenim Code 39 barkodom mogu dobiti funkcionalnu karticu. Neaktivne, skrivene i testne radnike ne uključujemo automatski.</p>'+
+ '<div class="tablewrap"><table class="simpletable"><thead><tr><th>Radnik</th><th>Razlog</th><th>Ispravka</th></tr></thead><tbody>'+skipped+'</tbody></table></div></details>':'')+
+ '<p class="smalltext">Nove barkodove dodjeljuj samo radnicima koji stvarno rade. Nakon potvrde promjene u Firebaseu, štampaj kartice. Nedostajuće barkodove nikada ne zamjenjujemo lažnim kodovima na štampi.</p>';
+ const management=original.replace(/(<button class="btn small" data-edit-worker="([^"]+)">Uredi<\/button>)/g,
  '$1<button class="btn small" data-print-card="$2">Kartica</button><button class="btn small" data-leave-emp="$2">Godišnji</button>');
+ return management.replace('<section class="panel" id="balkanWorkerManagement">',
+ '<section class="panel" id="balkanCardManagement"><h2>Štampanje barkod kartica</h2>'+info+'</section><section class="panel" id="balkanWorkerManagement">');
 };
-document.getElementById('app').addEventListener('click',event=>{
- if(!event.target.closest('[data-print-all-workers]'))return;
+document.getElementById('app').addEventListener('click',async event=>{
+ const print=event.target.closest('[data-print-all-workers]');
+ const issue=event.target.closest('[data-balkan-issue-cards]');
+ if(!print&&!issue)return;
  event.preventDefault();event.stopImmediatePropagation();
- if(unlocked)printAllWorkerCards();
+ if(!unlocked)return;
+ if(print){printAllWorkerCards();return}
+ const candidates=balkanCardCandidates();
+ if(!candidates.length)return;
+ const names=candidates.map(e=>e.name).join(', ');
+ if(!confirm('Dodijeliti '+candidates.length+' novih jedinstvenih barkodova ovim aktivnim radnicima?\n'+names+'\n\nRanije privremene šifre prestaju važiti. Poslije čuvanja provjeri status Firebase i tek tada štampaj.'))return;
+ try{
+  // Pripremimo sve kodove prije promjene podataka.
+  const used=new Set((S.employees||[]).map(e=>String(e.barcode||'').trim().toUpperCase()));
+  const changes=candidates.map(e=>({e,code:balkanNewWorkerCode(used)}));
+  for(const x of changes){x.e.barcode=x.code;x.e.barcodeAssigned=true}
+  audit('Dodijeljeni novi barkodovi za štampu',changes.map(x=>x.e.name).join(', '));
+  await save();
+  render();
+  alert('Dodijeljeno '+changes.length+' barkodova. Sačekaj da Firebase završi čuvanje prije štampe i provjeri kartice u marketu.');
+ }catch(err){alert('Barkodovi nisu sigurno potvrđeni: '+err.message+' Provjeri status Firebase prije štampanja.');render()}
 },true);
 
 
