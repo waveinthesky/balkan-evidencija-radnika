@@ -1,5 +1,5 @@
 // BALKAN: offline pokretanje kase, bez keširanja administratorskih i privatnih podataka.
-const CACHE='balkan-kiosk-offline-20261015-v1';
+const CACHE='balkan-kiosk-offline-20261016-scan-v2';
 const CORE=['./','./index.html','./kiosk.js','./manifest.webmanifest'];
 const ALLOWED=new Set(['','index.html','kiosk.js','kiosk-firebase.js','manifest.webmanifest']);
 self.addEventListener('install',event=>{
