@@ -1645,6 +1645,8 @@ function balkanCardReason(e){
  if(e.active===false)return 'Neaktivan radnik';
  if(e.hiredAt&&e.hiredAt>today())return 'Radnik još nije počeo raditi';
  if(e.terminatedAt&&e.terminatedAt<today())return 'Radni odnos je završen';
+ const location=assigned(e,today());
+ if(!location||!S.locations.some(l=>l.id===location))return 'Nije dodijeljen objekat';
  const code=String(e.barcode||'').trim().toUpperCase();
  if(!code||/^(NEPOSTAVLJENO|BEZ-KARTICE)-/i.test(code)||e.barcodeAssigned===false)return 'Barkod još nije dodijeljen';
  if(!/^[0-9A-Z .\-$\/+%]+$/.test(code))return 'Barkod sadrži znakove koje Code 39 ne podržava';
@@ -1692,10 +1694,10 @@ workers=function(){
  '<p class="smalltext">Samo aktivni, vidljivi, stvarni radnici sa jedinstvenim Code 39 barkodom mogu dobiti funkcionalnu karticu. Neaktivne, skrivene i testne radnike ne uključujemo automatski.</p>'+
  '<div class="tablewrap"><table class="simpletable"><thead><tr><th>Radnik</th><th>Razlog</th><th>Ispravka</th></tr></thead><tbody>'+skipped+'</tbody></table></div></details>':'')+
  '<p class="smalltext">Nove barkodove dodjeljuj samo radnicima koji stvarno rade. Nakon potvrde promjene u Firebaseu, štampaj kartice. Nedostajuće barkodove nikada ne zamjenjujemo lažnim kodovima na štampi.</p>';
- return original.replace('<section class="panel" id="balkanWorkerManagement">',
- '<section class="panel" id="balkanWorkerManagement">'+info)
- .replace(/(<button class="btn small" data-edit-worker="([^"]+)">Uredi<\/button>)/g,
+ const management=original.replace(/(<button class="btn small" data-edit-worker="([^"]+)">Uredi<\/button>)/g,
  '$1<button class="btn small" data-print-card="$2">Kartica</button><button class="btn small" data-leave-emp="$2">Godišnji</button>');
+ return management.replace('<section class="panel" id="balkanWorkerManagement">',
+ '<section class="panel" id="balkanWorkerManagement">'+info);
 };
 document.getElementById('app').addEventListener('click',async event=>{
  const print=event.target.closest('[data-print-all-workers]');
