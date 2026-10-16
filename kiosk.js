@@ -90,7 +90,7 @@ function showQueue(){
  $('queueState').textContent=waiting?
   waiting+' '+(waiting===1?'zapis čeka':'zapisa čeka')+' slanje u Firebase'+(review?', '+review+' za provjeru':'')+'.':
   review?review+' '+(review===1?'zapis zahtijeva':'zapisa zahtijevaju')+' provjeru.':
-  'Svi obrađeni zapisi s ovog računara su poslani.';
+  'Nema zapisa na čekanju.';
  $('queueRetry').disabled=!navigator.onLine||!items.length||!!flushing;
  const pending=items.map(x=>({id:x.id,name:cardLabel(x.barcode),kind:x.kind,at:x.at,
   state:x.flag==='review'?'POTREBNA PROVJERA':'ČEKA SLANJE',tone:x.flag==='review'?'bad':'pending'}));
@@ -203,7 +203,7 @@ function syncQueue(includeReview=false){
   $('queueRetry').disabled=true;
   try{
    const list=readQueue();
-   if(!list.length)return;
+   if(!list.length){setSyncMessage('Nema zapisa na čekanju.','ok');return}
    const sender=transport||await import('./kiosk-firebase.js');
    transport=sender;
    for(const item of list){
