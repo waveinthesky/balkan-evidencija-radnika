@@ -1697,7 +1697,7 @@ workers=function(){
  const management=original.replace(/(<button class="btn small" data-edit-worker="([^"]+)">Uredi<\/button>)/g,
  '$1<button class="btn small" data-print-card="$2">Kartica</button><button class="btn small" data-leave-emp="$2">Godišnji</button>');
  return management.replace('<section class="panel" id="balkanWorkerManagement">',
- '<section class="panel" id="balkanWorkerManagement">'+info);
+ '<section class="panel" id="balkanCardManagement"><h2>Štampanje barkod kartica</h2>'+info+'</section><section class="panel" id="balkanWorkerManagement">');
 };
 document.getElementById('app').addEventListener('click',async event=>{
  const print=event.target.closest('[data-print-all-workers]');
