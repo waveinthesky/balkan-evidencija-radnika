@@ -77,7 +77,7 @@ try{
  assert.equal(queued.length,2,'Second offline scan added');
  assert.equal(queued[1].kind,'out');
  assert.equal(queued[0].at,firstQueuedAt,'Offline original time retained');
- assert.equal((await page.locator('#events .item').count()),2,'Two queued entries visible offline');
+ assert.equal((await page.locator('#events .item-state.pending').count()),2,'Two queued entries visible offline alongside confirmed history');
  await context.setOffline(false);
  await page.waitForFunction(()=>navigator.onLine);
  // Firebase mock modules are loaded on internet restoration; no user presses "sync".
