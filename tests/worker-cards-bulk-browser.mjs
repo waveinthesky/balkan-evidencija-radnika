@@ -68,7 +68,7 @@ try {
  assert.equal(state.cards.length,7,'3 previous + 4 newly issued');
  assert.equal(new Set(state.codes.filter(Boolean)).size,state.codes.filter(Boolean).length,'No new duplicates');
  assert.ok(state.statuses.every(x=>x[1]),'Excluded workers unchanged');
- assert.match(await page.locator('[data-print-all-workers]').innerText(),/7/);
+ await page.waitForFunction(()=>document.querySelector('[data-print-all-workers]')?.textContent.includes('(7)'),{timeout:10000});
  const pop2=page.waitForEvent('popup');
  await page.locator('[data-print-all-workers]').click();
  const popup2=await pop2;
