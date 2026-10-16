@@ -67,9 +67,10 @@ try{
  assert.equal(queued[0].offlineAtCapture,true);
  const firstQueuedId=queued[0].id,firstQueuedAt=queued[0].at;
  await page.reload({waitUntil:'domcontentloaded'});
- await page.waitForFunction(()=>document.querySelector('#queueState')?.textContent.includes('1 zapisa čeka slanje'),{timeout:12000});
+ await page.waitForFunction(()=>document.querySelector('#queueState')?.textContent.includes('1 zapis čeka slanje'),{timeout:12000});
  assert.equal((await items())[0].id,firstQueuedId,'Offline record survives reload');
- assert.match(await page.locator('#status').innerText(),/Offline režim je spreman/);
+ assert.match(await page.locator('#receiptState').innerText(),/SAČUVANO NA OVOM RAČUNARU/);
+ assert.match(await page.locator('#connection').innerText(),/Bez interneta/);
  await page.locator('#modeOut').click();
  await scan('MARKET2');
  queued=await items();
@@ -90,10 +91,10 @@ try{
  await scan('INACTIVE');
  await page.waitForFunction(()=>JSON.parse(localStorage.getItem('balkan_kiosk_outbox_v1')||'[]').some(x=>x.flag==='review'));
  assert.equal((await items()).length,1,'Rejected card kept for review');
- assert.match(await page.locator('#queueState').innerText(),/1 za provjeru/);
+ assert.match(await page.locator('#queueState').innerText(),/1 zapis zahtijeva provjeru/);
  await page.evaluate(()=>globalThis.__denyWrite=true);
  await scan('MARKET1');
- await page.waitForFunction(()=>document.querySelector('#status')?.textContent.includes('Firebase odbija upis'));
+ await page.waitForFunction(()=>document.querySelector('#syncStatus')?.textContent.includes('Firebase odbija upis'));
  assert.equal((await items()).filter(x=>x.flag!=='review').length,1,'Permission denied leaves pending event');
  await page.evaluate(()=>globalThis.__denyWrite=false);
  await page.locator('#queueRetry').click();
