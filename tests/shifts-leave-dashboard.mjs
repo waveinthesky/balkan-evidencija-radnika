@@ -50,7 +50,7 @@ const leaveRow=page.locator('#balkanLiveLeaveSummary tr').filter({hasText:'Smjen
 const leaveText=await leaveRow.innerText();
 for(const part of ['24','-5',String(balance.remaining)])assert.ok(leaveText.includes(part),'Annual leave part '+part);
 await page.locator('[data-route="radnici"]').first().click();
-assert.equal(await page.getByText('Skriveni Probni').count(),0,'Hidden staff not shown by default');
+assert.equal(await page.locator('#balkanWorkerManagement').getByText('Skriveni Probni').count(),0,'Hidden staff not in employee management; diagnostic may still explain exclusion');
 await page.locator('[data-worker-toggle]').click();
 assert.ok(await page.getByText('Skriveni Probni').count(),'Hidden staff displayed on demand');
 await page.locator('tr').filter({hasText:'Skriveni Probni'}).locator('[data-worker-delete]').click();
