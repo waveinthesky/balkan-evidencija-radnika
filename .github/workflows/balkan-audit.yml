@@ -74,3 +74,4 @@ jobs:
           node tests/worker-cards-bulk-browser.mjs
           node tests/launch-kiosk-browser.mjs
           node tests/kiosk-receipt-browser.mjs
+          node tests/kiosk-fast-sync-browser.mjs
