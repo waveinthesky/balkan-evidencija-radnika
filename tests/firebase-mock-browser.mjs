@@ -90,7 +90,7 @@ await kiosk.waitForFunction(()=>document.querySelector('#status')?.textContent.i
 assert.equal(await kiosk.getByText('DOLAZAK').count()>0,true,'Public scanning UI');
 await kiosk.locator('#barcode').fill('TEST999');
 await kiosk.locator('#scanForm button[type=submit]').click();
-await kiosk.waitForFunction(()=>document.querySelector('#status')?.textContent.includes('Firebase odbija upis'),{timeout:10000});
+await kiosk.waitForFunction(()=>document.querySelector('#syncStatus')?.textContent.includes('Firebase odbija upis'),{timeout:10000});
 assert.ok(!(await kiosk.locator('#status').textContent()).includes('Potvrđeno u Firebase bazi'),'Rejected write never reports success');
 assert.equal(await kiosk.evaluate(()=>JSON.parse(localStorage.getItem('balkan_kiosk_outbox_v1')||'[]').length),1,'Failed upload stays in durable local queue');
 assert.equal(errors.length,0,'No page errors: '+errors.join(' / '));
