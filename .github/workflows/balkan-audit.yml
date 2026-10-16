@@ -71,4 +71,5 @@ jobs:
           node tests/vacation-law-cards.mjs
           node tests/seasonal-schedule-annual-browser.mjs
           node tests/workers-leave-layout-browser.mjs
+          node tests/worker-cards-bulk-browser.mjs
           node tests/launch-kiosk-browser.mjs
