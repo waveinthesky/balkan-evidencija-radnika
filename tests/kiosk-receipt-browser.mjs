@@ -83,7 +83,7 @@ try{
  await page.waitForFunction(()=>document.querySelector('#receipt')?.classList.contains('bad'),{timeout:12000});
  assert.match(await page.locator('#receiptState').innerText(),/NIJE POTVRĐENO/);
  assert.match(await page.locator('#receiptHint').innerText(),/Kartica nije pronađena/);
- assert.ok(!(await page.locator('#receiptState').innerText()).includes('POTVRĐENO U FIREBASE'),'Unknown barcode never appears confirmed');
+ assert.ok((await page.locator('#receiptState').innerText()).startsWith('NIJE POTVRĐENO'),'Unknown barcode explicitly marked NOT confirmed');
  await page.setViewportSize({width:375,height:790});
  assert.ok(await page.locator('#receipt').isVisible(),'Mobile has visible receipt');
  assert.ok((await page.locator('#barcode').boundingBox()).width>280,'Mobile barcode input remains wide');
