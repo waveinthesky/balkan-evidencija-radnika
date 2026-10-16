@@ -100,6 +100,7 @@ try{
  await page.waitForFunction(()=>JSON.parse(localStorage.getItem('balkan_kiosk_outbox_v1')||'[]').filter(x=>x.flag!=='review').length===0);
  assert.equal((await items()).length,1,'Only invalid card remains for manual review');
  // HID-scanner simulation: focus lost after pressing a button; no click on barcode field.
+ await page.locator('#modeIn').click();
  await page.locator('#queueRetry').focus();
  assert.notEqual(await page.evaluate(()=>document.activeElement?.id),'barcode');
  await page.keyboard.type('MARKET2',{delay:4});
