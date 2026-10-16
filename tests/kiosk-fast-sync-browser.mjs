@@ -54,7 +54,7 @@ try{
  await page.waitForFunction(()=>JSON.parse(localStorage.getItem('balkan_kiosk_outbox_v1')||'[]').find(x=>x.id==='blocked-old')?.error,{timeout:6000});
  const pending=await page.evaluate(()=>JSON.parse(localStorage.getItem('balkan_kiosk_outbox_v1')));
  assert.equal(pending.length,1,'Blocked old record remains, not deleted');
- assert.ok(pending[0].error.includes('Firebase je odbio upis'),'Error is explicit about stage');
+ assert.ok(pending[0].error.includes('Firebase odbija upis'),'Error is explicit about stage');
  assert.ok((await page.locator('#events').innerText()).includes('GREŠKA'),'Old record failure visible in interface');
  assert.equal(await page.evaluate(()=>globalThis.__authCount),1,'Single anonymous auth session despite parallel sends');
  const reads=await page.evaluate(()=>globalThis.__reads);
