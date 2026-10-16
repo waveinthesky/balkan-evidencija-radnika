@@ -1,8 +1,8 @@
 // Kiosk radi i bez Firebase modula dok nema interneta. Svaki sken prvo ide u trajni outbox.
 const $=id=>document.getElementById(id);
 const esc=s=>String(s??'').replace(/[&<>'"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[c]));
-const OUTBOX_KEY='balkan_kiosk_outbox_v1',RECENT_KEY='balkan_kiosk_lastscan_v1',LIMIT=1500;
-let mode='in',busy=false,flushing=null,transport=null,lastScan=null,history=[];
+const OUTBOX_KEY='balkan_kiosk_outbox_v1',RECENT_KEY='balkan_kiosk_lastscan_v1',HISTORY_KEY='balkan_kiosk_confirmed_v1',RECEIPT_KEY='balkan_kiosk_receipt_v1',LIMIT=1500;
+let mode='in',busy=false,flushing=null,transport=null,lastScan=null,history=[],receiptId=null;
 let storageBroken=false,previousSyncError='';
 
 function readQueue(){
@@ -21,31 +21,91 @@ function saveQueue(items){
 function feedback(message,type=''){
  const el=$('status');el.textContent=message;el.className='result '+type;
 }
+function setSyncMessage(message,tone=''){
+ $('syncStatus').textContent=message;
+ $('syncStatus').style.color=tone==='bad'?'#a12837':tone==='ok'?'#08613e':'#586981';
+}
+function cardLabel(code){
+ // Dok server ne potvrdi karticu ne tvrdimo da znamo ime radnika.
+ const value=String(code||''),tail=value.slice(-4);
+ return 'Kartica '+(tail?'••••'+tail:'bez koda');
+}
+function showReceipt(info,persist=true){
+ const rec={id:info.id||null,variant:info.variant||'idle',heading:info.heading||'Spremno',
+  name:info.name||'Prinesi karticu',kind:info.kind||'in',at:info.at||null,
+  state:info.state||'',hint:info.hint||'',message:info.message||'',icon:info.icon||'⌁'};
+ receiptId=rec.id;
+ $('receipt').className='receipt '+rec.variant;
+ $('receiptIcon').textContent=rec.icon;
+ $('receiptHeading').textContent=rec.heading;
+ $('receiptPerson').textContent=rec.name;
+ $('receiptKind').textContent=rec.kind==='out'?'↗ ODLAZAK':'↘ DOLAZAK';
+ $('receiptTime').textContent=rec.at?formatWhen(rec.at):'Čeka se skeniranje';
+ $('receiptState').textContent=rec.state;
+ $('receiptHint').textContent=rec.hint;
+ feedback(rec.message,rec.variant==='ok'?'ok':rec.variant==='bad'?'bad':'');
+ if(persist){
+  try{localStorage.setItem(RECEIPT_KEY,JSON.stringify(rec))}catch{}
+ }
+}
+function restoreReceipt(){
+ try{
+  const rec=JSON.parse(localStorage.getItem(RECEIPT_KEY)||'null');
+  if(!rec||!['pending','ok','bad'].includes(rec.variant))return false;
+  const queued=rec.id&&readQueue().find(x=>x.id===rec.id);
+  if(queued&&rec.variant==='ok'){
+   rec.variant='pending';rec.state='SAČUVANO NA OVOM RAČUNARU';rec.heading='Čeka se potvrda';
+   rec.hint='Zapis još nije potvrđen u Firebase bazi.';
+  }
+  if(!queued&&rec.variant==='pending'){
+   // Ovaj uređaj zna samo da zapis više nije u lokalnom redu.
+   rec.variant='idle';rec.state='Provjeri evidenciju';rec.hint='Prethodni zapis nije više na čekanju. Provjeri posljednja skeniranja.';
+  }
+  showReceipt(rec,false);
+  return true;
+ }catch{return false}
+}
+function loadHistory(){
+ try{
+  const data=JSON.parse(localStorage.getItem(HISTORY_KEY)||'[]');
+  history=Array.isArray(data)?data.filter(x=>x&&typeof x.name==='string'&&typeof x.at==='string').slice(0,20):[];
+ }catch{history=[]}
+}
+function saveHistory(){
+ try{localStorage.setItem(HISTORY_KEY,JSON.stringify(history.slice(0,20)))}catch{}
+}
 function formatWhen(x){return new Date(x).toLocaleString('bs-BA',{day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit',hourCycle:'h23'})}
 function connection(message,online=false){
  $('connection').textContent=message;
- $('connection').style.background=online?'#e4f8ee':'#fff0db';
+ $('connection').className='pill '+(online?'status-online':'status-offline');
 }
 function showQueue(){
  let items;
  try{items=readQueue();storageBroken=false}catch(e){
   storageBroken=true;$('queueState').textContent='⚠ Lokalna evidencija nije dostupna: '+e.message;
+  $('queueRetry').disabled=true;
   return;
  }
  const waiting=items.filter(x=>x.flag!=='review').length,review=items.length-waiting;
- $('queueState').textContent='Na ovom računaru: '+waiting+' zapisa čeka slanje'+(review?', '+review+' za provjeru':'')+'.'+
-  (waiting||review?' Nemoj brisati podatke preglednika niti koristiti privatni režim rada.':'');
+ $('queueState').textContent=waiting?
+  waiting+' '+(waiting===1?'zapis čeka':'zapisa čeka')+' slanje u Firebase'+(review?', '+review+' za provjeru':'')+'.':
+  review?review+' '+(review===1?'zapis zahtijeva':'zapisa zahtijevaju')+' provjeru.':
+  'Svi obrađeni zapisi s ovog računara su poslani.';
  $('queueRetry').disabled=!navigator.onLine||!items.length||!!flushing;
- const combined=[
-  ...items.slice(-15).reverse().map(x=>({name:x.flag==='review'?'⚠ Potrebna provjera':'⏳ Čeka Firebase',kind:x.kind,time:formatWhen(x.at)})),
-  ...history
- ].slice(0,20);
- $('events').innerHTML=combined.map(x=>'<div class="item"><span><b>'+esc(x.name)+'</b> · '+
-  (x.kind==='in'?'Dolazak':'Odlazak')+'</span><span>'+esc(x.time)+'</span></div>').join('')||
-  'Nema prijava na ovom računaru.';
+ const pending=items.map(x=>({id:x.id,name:cardLabel(x.barcode),kind:x.kind,at:x.at,
+  state:x.flag==='review'?'POTREBNA PROVJERA':'ČEKA SLANJE',tone:x.flag==='review'?'bad':'pending'}));
+ const confirmed=history.map(x=>({...x,state:'POTVRĐENO U FIREBASEU',tone:'ok'}));
+ const combined=[...pending,...confirmed].sort((a,b)=>Date.parse(b.at)-Date.parse(a.at)).slice(0,20);
+ $('events').innerHTML=combined.map(x=>'<div class="item"><div class="item-info">'+
+  '<div class="item-name">'+esc(x.name)+'</div>'+
+  '<div class="item-sub">'+(x.kind==='in'?'↘ DOLAZAK':'↗ ODLAZAK')+'</div></div>'+
+  '<div class="item-right"><div class="item-time">'+esc(formatWhen(x.at))+'</div>'+
+  '<span class="item-state '+x.tone+'">'+esc(x.state)+'</span></div></div>').join('')||
+  'Nema skeniranja na ovom računaru.';
 }
 function setMode(value){
  mode=value;
+ if(!receiptId&&$('receipt').classList.contains('idle'))$('receiptKind').textContent=value==='out'?'↗ ODLAZAK':'↘ DOLAZAK';
  $('modeIn').className='mode'+(value==='in'?' on':'');
  $('modeOut').className='mode'+(value==='out'?' out':'');
  focus();
@@ -139,6 +199,7 @@ function syncQueue(includeReview=false){
  if(!navigator.onLine){statusConnection();return Promise.resolve()}
  flushing=(async()=>{
   let sent=0,needsReview=0,failed='',lastConfirmed=null;
+  setSyncMessage('Šaljem sačuvane zapise…');
   $('queueRetry').disabled=true;
   try{
    const list=readQueue();
@@ -153,14 +214,27 @@ function syncQueue(includeReview=false){
      const confirmed=await boundedUpload(sender,current);
      const other=readQueue().filter(x=>x.id!==current.id);
      saveQueue(other);
-     history.unshift({name:confirmed.name,kind:confirmed.kind,time:formatWhen(confirmed.at)});
-     history=history.slice(0,20);
+     history.unshift({id:current.id,name:confirmed.name,kind:confirmed.kind,at:confirmed.at,locationId:confirmed.locationId});
+     history=history.slice(0,20);saveHistory();
+     if(receiptId===current.id)showReceipt({
+      id:current.id,variant:'ok',icon:'✓',heading:'Uspješno evidentirano',name:confirmed.name,
+      kind:confirmed.kind,at:confirmed.at,state:'POTVRĐENO U FIREBASE BAZI',
+      hint:'Prijava je uspješno upisana u centralnu evidenciju.',
+      message:'Potvrđeno u Firebase bazi: '+confirmed.name+' · '+(confirmed.kind==='in'?'DOLAZAK':'ODLAZAK')
+     });
      $('location').textContent='Objekat: '+(confirmed.locationId==='m1'?'Market 1':confirmed.locationId==='m2'?'Market 2':confirmed.locationId);
      sent++;lastConfirmed=confirmed;
     }catch(err){
      if(manualReview(err)){
       const items=readQueue(),record=items.find(x=>x.id===current.id);
       if(record){record.flag='review';record.error=describe(err);saveQueue(items)}
+      if(receiptId===current.id)showReceipt({
+       id:current.id,variant:'bad',icon:'!',heading:'Karticu treba provjeriti',
+       name:cardLabel(current.barcode),kind:current.kind,at:current.at,
+       state:'NIJE POTVRĐENO U FIREBASEU',
+       hint:describe(err)+' Obrati se administratoru.',
+       message:'Zapis ostaje na ovom računaru za provjeru.'
+      });
       needsReview++;continue;
      }
      failed=describe(err);break;
@@ -172,21 +246,34 @@ function syncQueue(includeReview=false){
   showQueue();
   const remaining=readQueue(),count=remaining.filter(x=>x.flag!=='review').length,review=remaining.length-count;
   if(failed){
-   feedback('Slanje nije završeno: '+failed+' Preostalo na ovom računaru: '+count+'.','bad');
+   setSyncMessage('Slanje nije završeno: '+failed+' Preostalo: '+count+'.','bad');
+   const current=remaining.find(x=>x.id===receiptId);
+   if(current&&current.flag!=='review')showReceipt({
+    id:current.id,variant:'pending',icon:'⏳',heading:'Čeka se slanje',name:cardLabel(current.barcode),
+    kind:current.kind,at:current.at,state:'SAČUVANO NA OVOM RAČUNARU',
+    hint:'Firebase još nije potvrdio zapis. Podaci nisu izgubljeni.',
+    message:'Sačuvano NA OVOM RAČUNARU. Slanje čeka ponovno povezivanje.'
+   });
   }else if(review||needsReview){
-   feedback('Zapisi za provjeru: '+review+'. Ništa nije izbrisano. Provjeri kartice i pokušaj ponovo.','bad');
+   setSyncMessage(review+' '+(review===1?'zapis traži':'zapisa traže')+' provjeru.','bad');
   }else if(sent){
-   feedback('Potvrđeno u Firebase bazi: '+(sent===1?lastConfirmed.name+' · '+(lastConfirmed.kind==='in'?'DOLAZAK':'ODLAZAK'):'poslano '+sent+' skeniranja')+'.','ok');
+   setSyncMessage('Firebase potvrdio '+sent+' '+(sent===1?'zapis':'zapisa')+'.','ok');
   }else if(count){
-   feedback('Lokalno sačuvano: '+count+' zapisa čeka slanje.');
+   setSyncMessage('Čeka se slanje '+count+' zapisa.');
+  }else setSyncMessage('Nema zapisa na čekanju.','ok');
+ })().finally(()=>{
+  flushing=null;showQueue();focus();
+  // Skenovi koji su stigli dok je stari red bio u slanju idu odmah sljedeći.
+  if(navigator.onLine&&!previousSyncError){
+   try{if(readQueue().some(x=>x.flag!=='review'))setTimeout(()=>void syncQueue(),0)}catch{}
   }
- })().finally(()=>{flushing=null;showQueue();focus()});
+ });
  return flushing;
 }
 $('modeIn').addEventListener('click',()=>setMode('in'));
 $('modeOut').addEventListener('click',()=>setMode('out'));
 $('queueRetry').addEventListener('click',async()=>{
- if(!navigator.onLine){feedback('Nema interneta. Lokalni zapisi ostaju sačuvani.','bad');return}
+ if(!navigator.onLine){setSyncMessage('Nema interneta. Lokalni zapisi ostaju sačuvani.','bad');return}
  await syncQueue(true);
 });
 $('scanForm').addEventListener('submit',async e=>{
@@ -199,31 +286,55 @@ $('scanForm').addEventListener('submit',async e=>{
   const items=readQueue();
   if(items.length>=LIMIT)throw Error('Lokalna evidencija je puna. Preuzmi sigurnosnu kopiju i zatraži pomoć; ne možemo potvrditi novi sken.');
   if(duplicate(code,selectedMode,now,items)){
-   feedback('Ponovljeno skeniranje u kratkom roku je zaustavljeno.','bad');
+   showReceipt({variant:'bad',icon:'!',heading:'Ponovljeno skeniranje',name:cardLabel(code),
+    kind:selectedMode,at:new Date(now).toISOString(),state:'NIJE DODAT NOVI ZAPIS',
+    hint:'Ista kartica je već skenirana za ovu radnju u posljednjih 60 sekundi.',
+    message:'Ponovljeno skeniranje u kratkom roku je zaustavljeno.'});
    return;
   }
   const item={id:crypto.randomUUID(),barcode:code,kind:selectedMode,at:new Date(now).toISOString(),
    addedAt:now,offlineAtCapture:!navigator.onLine,flag:'queued'};
   saveQueue([...items,item]); // Moramo imati potvrdu lokalnog upisa PRIJE ikakvog slanja.
   markRecent(code,selectedMode,now);showQueue();
-  feedback('Sačuvano NA OVOM RAČUNARU: '+(selectedMode==='in'?'DOLAZAK':'ODLAZAK')+
-   ' u '+formatWhen(item.at)+'. '+(navigator.onLine?'Šalje se u Firebase…':'Čeka povratak interneta.')+
-   ' Nije još potvrđeno u Firebase bazi.');
+  showReceipt({id:item.id,variant:'pending',icon:'⏳',heading:'Skeniranje primljeno',
+   name:cardLabel(code),kind:selectedMode,at:item.at,
+   state:'SAČUVANO NA OVOM RAČUNARU',
+   hint:navigator.onLine?'Provjeravam karticu i šaljem zapis u Firebase…':'Nema interneta. Zapis će se automatski poslati kada se veza vrati.',
+   message:'Sačuvano NA OVOM RAČUNARU: '+(selectedMode==='in'?'DOLAZAK':'ODLAZAK')+
+    '. Još NIJE potvrđeno u Firebase bazi.'});
+  setSyncMessage(navigator.onLine?'Slanje u Firebase je u toku…':'Nema interneta – čekaju lokalni zapisi.');
   if(navigator.onLine)void syncQueue();
  }catch(err){
-  feedback('NIJE SAČUVANO: '+describe(err)+' Koristi rezervnu ručnu evidenciju!','bad');
+  showReceipt({variant:'bad',icon:'!',heading:'Skeniranje nije sačuvano',
+   name:cardLabel(code),kind:selectedMode,at:new Date(now).toISOString(),
+   state:'NIJE EVIDENTIRANO',
+   hint:'Koristi rezervnu ručnu evidenciju i obavijesti administratora.',
+   message:'NIJE SAČUVANO: '+describe(err)});
  }finally{busy=false;$('barcode').disabled=false;showQueue();focus()}
 });
-window.addEventListener('offline',()=>{statusConnection();feedback('Nema interneta. Novi skenovi se čuvaju samo na ovom računaru.')});
-window.addEventListener('online',()=>{statusConnection();void syncQueue()});
+window.addEventListener('offline',()=>{statusConnection();setSyncMessage('Offline: novi skenovi se čuvaju na ovom računaru.')});
+window.addEventListener('online',()=>{statusConnection();setSyncMessage('Internet je ponovo dostupan; provjeravam zapise…');void syncQueue()});
 document.addEventListener('visibilitychange',()=>{if(!document.hidden&&navigator.onLine)void syncQueue()});
 setInterval(()=>{if(navigator.onLine&&!flushing){try{if(readQueue().some(x=>x.flag!=='review'))void syncQueue()}catch{}}},30000);
 prepareRecent();
+loadHistory();
 statusConnection();
-try{readQueue();feedback(navigator.onLine?
- 'Spremno za skeniranje. Novi zapis se prvo čuva lokalno pa šalje Firebaseu.':
- 'Offline režim je spreman. Skeniranja se čuvaju na ovom računaru i šalju kada se internet vrati.')}
-catch(err){storageBroken=true;feedback('Lokalna evidencija je nedostupna: '+describe(err)+' Ne koristi ovaj ekran dok ne sačuvaš podatke.','bad')}
+try{
+ readQueue();
+ if(!restoreReceipt()){
+  showReceipt({variant:'idle',icon:'⌁',heading:'Spremno za skeniranje',
+   name:'Prinesi karticu',kind:mode,state:'ČEKA SE SKENIRANJE',
+   hint:'Odmah će se pojaviti ime radnika kada Firebase potvrdi karticu.',
+   message:navigator.onLine?'Spremno za skeniranje.':'Offline režim je spreman. Skeniranja se čuvaju na ovom računaru.'},false);
+ }
+ setSyncMessage(navigator.onLine?'Internet dostupan.':'Bez interneta: skeniranja ostaju lokalno.');
+}catch(err){
+ storageBroken=true;
+ showReceipt({variant:'bad',icon:'!',heading:'Lokalna evidencija nije dostupna',
+  state:'NE KORISTI EKRAN ZA PRIJAVU',hint:'Koristi ručnu evidenciju dok administrator ne provjeri podatke.',
+  message:'Lokalna evidencija je nedostupna: '+describe(err)});
+}
+showQueue();
 focus();
 if(navigator.onLine)void syncQueue();
 if('serviceWorker' in navigator)navigator.serviceWorker.register('./sw.js').catch(err=>console.warn('Offline pokretanje nije dostupno:',err));
