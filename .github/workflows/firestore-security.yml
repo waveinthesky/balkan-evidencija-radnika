@@ -21,6 +21,6 @@ jobs:
           distribution: temurin
           java-version: '21'
       - name: Install Firebase emulator and test tooling
-        run: npm install --no-save firebase-tools@14 firebase@11 @firebase/rules-unit-testing@5
+        run: npm install --no-save firebase-tools@14 firebase@11 @firebase/rules-unit-testing@4
       - name: Validate rules in a real Firestore emulator
         run: npx firebase emulators:exec --project demo-balkan-rules --only firestore "node tests/firestore-security-rules.mjs"
