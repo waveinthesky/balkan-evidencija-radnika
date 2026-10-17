@@ -1,0 +1,53 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Administracija: jedini Firebase UID koji smije čitati/uređivati evidenciju.
+    function admin() {
+      return request.auth != null
+        && request.auth.uid == 'jWTYPv8PhIb8xUbo0Ra0RtrKVf82';
+    }
+    // Kiosk dobija samo minimalna prava anonimnog Firebase naloga.
+    function kiosk() {
+      return request.auth != null
+        && request.auth.token.firebase.sign_in_provider == 'anonymous';
+    }
+    function badgePath(barcode) {
+      return /databases/$(database)/documents/badges/$(barcode);
+    }
+    function validKioskEvent(eventId) {
+      let e = request.resource.data;
+      return e.keys().hasAll(['id','empId','locId','kind','at','barcode','source','createdAt'])
+        && e.keys().hasOnly(['id','empId','locId','kind','at','barcode','source','createdAt'])
+        && e.id is string && e.id == eventId && e.id.size() >= 8 && e.id.size() <= 100
+        && e.barcode is string && e.barcode.size() >= 1 && e.barcode.size() <= 64
+        && e.empId is string && e.empId.size() > 0
+        && e.locId is string && e.locId.size() > 0
+        && e.at is string && e.at.size() >= 20 && e.at.size() <= 40
+        && e.kind in ['in','out']
+        && e.source == 'barcode'
+        && e.createdAt == request.time
+        && exists(badgePath(e.barcode))
+        && get(badgePath(e.barcode)).data.active == true
+        && get(badgePath(e.barcode)).data.empId == e.empId
+        && get(badgePath(e.barcode)).data.locationId == e.locId;
+    }
+    match /badges/{barcode} {
+      // Radnik može skenirati samo pojedinačnu karticu, ne čitati listu svih radnika.
+      allow get: if admin() || kiosk();
+      allow list: if admin();
+      allow create, update, delete: if admin();
+    }
+    match /records/{collectionName}/items/{itemId} {
+      // Radnici NE mogu preuzeti spisak radnika, istoriju ili arhivu 2025.
+      allow read: if admin();
+      allow create: if admin()
+        || (collectionName == 'events' && kiosk() && validKioskEvent(itemId));
+      // Ponovno slanje ISTOG offline događaja s istim ID-jem ne smije ga odbiti:
+      // dozvoljen je samo novi serverTimestamp, ništa drugo.
+      allow update: if admin()
+        || (collectionName == 'events' && kiosk() && validKioskEvent(itemId)
+            && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['createdAt']));
+      allow delete: if admin();
+    }
+  }
+}
