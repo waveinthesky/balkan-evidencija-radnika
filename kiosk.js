@@ -93,8 +93,9 @@ function connection(){
  else{text='● Internet dostupan';cls='status-neutral'}
  el.textContent=text;el.className='pill '+cls;
 }
-function explain(code,message){
+function explain(code,message,stage){
  const c=String(code||'');
+ if(c==='permission-denied'&&stage==='badge')return 'Firebase odbija upis: server ne dozvoljava kasi ni da pročita karticu, jer ispravna pravila nisu objavljena. Lokalni zapis je sačuvan. Administrator mora objaviti pravila (Firestore → Rules → Publish).';
  if(c==='permission-denied')return 'Firebase odbija upis: sigurnosna pravila na serveru ne dozvoljavaju ovaj zapis. Lokalni zapis je sačuvan. Administrator mora objaviti ispravna pravila (Firestore → Rules → Publish).';
  if(c==='auth/operation-not-allowed'||c==='auth/admin-restricted-operation')return 'U Firebase konzoli nije uključena anonimna prijava (Authentication → Sign-in method → Anonymous).';
  if(c==='auth/network-request-failed'||c==='unavailable'||c==='slow-server'||c==='offline')return 'Veza sa serverom je spora ili prekinuta. Zapis je sačuvan i šalje se automatski.';
@@ -195,7 +196,7 @@ function boundedUpload(sender,item){
   Promise.resolve().then(()=>sender.sendQueuedScan(item)).then(value=>done(null,value),error=>done(error));
  });
 }
-function describe(err){return explain(err?.code,err?.message||String(err||''))}
+function describe(err){return explain(err?.code,err?.message||String(err||''),err?.stage)}
 
 // ---------- slanje ----------
 function backoffMs(item){
@@ -268,7 +269,7 @@ function syncQueue(includeReview=false){
      }catch(err){
       const reason=describe(err),items=readQueue(),record=items.find(x=>x.id===current.id);
       if(record){
-       record.error=reason;record.errorDetail=String(err?.message||err);record.errorCode=String(err?.code||'');
+       record.error=reason;record.errorDetail=String(err?.message||err);record.errorCode=String(err?.code||'');record.errorStage=String(err?.stage||'');
        record.lastTriedAt=Date.now();record.attempts=(Number(record.attempts)||0)+1;
        if(manualReview(err))record.flag='review';
        record.nextTryAt=Date.now()+backoffMs(record);
@@ -327,7 +328,7 @@ async function runDiagnostics(){
    rows.push({ok:true,name:'Firebase modul',detail:'Učitan'});paint();
    const code=lastScan?.code||items[0]?.barcode||'';
    for(const s of await sender.diagnose(code)){
-    rows.push({ok:s.ok,name:s.name,detail:s.ok?s.detail:explain(s.code,s.detail)+' ['+(s.code||'greška')+']'});paint();
+    rows.push({ok:s.ok,name:s.name,detail:s.ok?s.detail:explain(s.code,s.detail,'badge')+' ['+(s.code||'greška')+']'});paint();
     if(s.ok)lastServerOk=Date.now();
    }
   }catch(err){rows.push({ok:false,name:'Firebase modul',detail:describe(err)});paint()}
