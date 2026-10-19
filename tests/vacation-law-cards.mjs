@@ -16,7 +16,7 @@ try{
  assert.equal(await page.evaluate(()=>window.__AUDIT_ERROR||''),'','Boot succeeded');
  const logic=await page.evaluate(()=>{
   const data=window.BALKAN_V6.state(),employee={
-   id:'audit-vacation',name:'Audit Godisnji',active:true,barcode:'BKTEST26',
+   id:'audit-vacation',name:'Audit Godisnji',active:true,barcode:'2900000000063',
    barcodeAssigned:true,defaultLocationId:'m1',hiredAt:'2026-01-01',attendanceFrom:'2026-10-01',
    assignments:[{from:'2026-01-01',locationId:'m1'}],terminatedAt:''
   };

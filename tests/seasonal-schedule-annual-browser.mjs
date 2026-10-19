@@ -23,7 +23,7 @@ try{
   S.locations.find(l=>l.id==='m2').schedules.push({id:'five-days',from,
    open:'08:00',close:'20:00',days:[1,2,3,4,5],grace:0});
   const worker=(id,name,loc,mode,shift)=>({
-   id,name,barcode:'BK'+id,barcodeAssigned:true,active:true,
+   id,name,barcode:newEan13(),barcodeAssigned:true,active:true,
    defaultLocationId:loc,assignments:[{from,locationId:loc}],
    hiredAt:from,attendanceFrom:'2026-10-01',defaultShift:mode,shiftStart:shift
   });

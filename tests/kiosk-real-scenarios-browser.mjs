@@ -4,7 +4,7 @@
 import {chromium} from 'playwright';
 import assert from 'node:assert/strict';
 const URL='http://127.0.0.1:8765/index.html';
-const cards={W1:'Amra Hodžić',W2:'Edin Lukač',W3:'Sanja Perović',W4:'Nikola Vuković',W5:'Mirela Test',BAD:null};
+const cards={W1:'Amra Hodžić',W2:'Edin Lukač',W3:'Sanja Perović',W4:'Nikola Vuković',W5:'Mirela Test','2900000000018':'Ena Trinaest',BAD:null};
 const auth='const a={currentUser:null};export function getAuth(){return a}export async function signInAnonymously(){await new Promise(r=>setTimeout(r,100));a.currentUser={uid:"anon"};return{user:a.currentUser}}';
 const fs=`
 const C=${JSON.stringify(cards)};
@@ -170,6 +170,13 @@ await page.reload({waitUntil:'domcontentloaded'});
 await scan('W5','in');
 assert.match(await state(),/VEĆ SI PRIJAVLJEN OD/,'Pravilo važi i nakon ponovnog otvaranja programa');
 ok('Sigurnosno pravilo: dupli DOLAZAK/ODLAZAK blokiran (i nakon restarta), ODLAZAK bez dolaska traži potvrdu');
+
+// EAN-13 kartica: skener koji NE šalje kontrolnu cifru (12 cifara) i dalje radi
+await scan('290000000001','in');
+await page.waitForFunction(()=>document.querySelector('#receipt').classList.contains('ok'),{timeout:5000});
+assert.ok((await server()).some(x=>x.barcode==='2900000000018'),'Kontrolna cifra dopunjena: upisan puni EAN-13');
+assert.equal(await page.locator('#receiptPerson').innerText(),'Ena Trinaest');
+ok('EAN-13 kartica radi i kad skener izostavi kontrolnu cifru');
 
 // Redoslijed: dolazak prije odlaska iste kartice
 const fin=await server();const ids=new Set(fin.map(x=>x.id));assert.equal(ids.size,fin.length);

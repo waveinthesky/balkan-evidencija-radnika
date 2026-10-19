@@ -214,6 +214,15 @@ function boundedUpload(sender,item){
 }
 function describe(err){return explain(err?.code,err?.message||String(err||''),err?.stage)}
 
+// EAN-13 kartice radnika (prefiks 29): neki skeneri su podešeni da ne šalju zadnju
+// kontrolnu cifru. Tada je dopunjavamo, da kartica radi na svakom skeneru.
+function ean13Check(d12){let sum=0;for(let i=0;i<12;i++)sum+=Number(d12[i])*(i%2?3:1);return String((10-sum%10)%10)}
+function normalizeCode(raw){
+ const code=String(raw||'').replace(/\s+/g,'').toUpperCase();
+ if(/^29\d{10}$/.test(code))return code+ean13Check(code);
+ return code;
+}
+
 // ---------- slanje ----------
 function backoffMs(item){
  const n=Math.max(1,Number(item.attempts)||1);
@@ -364,7 +373,7 @@ $('queueRetry').addEventListener('click',async()=>{
 $('diagRun').addEventListener('click',()=>void runDiagnostics());
 $('scanForm').addEventListener('submit',e=>{
  e.preventDefault();
- const code=$('barcode').value.trim().toUpperCase(),selectedMode=mode,now=Date.now();
+ const code=normalizeCode($('barcode').value),selectedMode=mode,now=Date.now();
  $('barcode').value='';
  if(!code||busy)return;
  busy=true;
