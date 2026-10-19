@@ -17,7 +17,7 @@ export async function getDocFromServer(ref){const code=ref.split('/').pop();(glo
  await wait(globalThis.__lat??150);
  const n=C[code];return{exists:()=>!!n,data:()=>({active:true,empId:'e-'+code,locationId:'m1',name:n})}}
 export async function setDoc(ref,v){
- if(globalThis.__hang)return new Promise(()=>{});
+ if(globalThis.__hang||(globalThis.__hangCards||[]).includes(v.barcode))return new Promise(()=>{});
  if(!navigator.onLine)return new Promise(()=>{});
  await wait(globalThis.__lat??150);
  if((globalThis.__reject||[]).includes(v.barcode))throw Object.assign(new Error('Missing or insufficient permissions.'),{code:'permission-denied'});
@@ -119,6 +119,36 @@ ok('Server ne odgovara: sljedeći radnik skenira odmah ('+ms+' ms / '+ms2+' ms d
 await page.evaluate(()=>globalThis.__hang=false);
 await page.waitForFunction(()=>JSON.parse(localStorage.getItem('balkan_kiosk_outbox_v1')||'[]').filter(x=>x.flag!=='review').length===0,{timeout:70000});
 ok('Nakon oporavka servera zapisi automatski potvrđeni');
+
+// KVAR IZ MARKETA: stari zaglavljeni zapis iste kartice (označen za provjeru ili s greškom)
+// NE smije blokirati nove prijave te kartice.
+await page.evaluate(()=>{
+ const q=JSON.parse(localStorage.getItem('balkan_kiosk_outbox_v1')||'[]'),t=Date.now()-3600000;
+ q.push({id:'stari-review-w1',barcode:'W1',kind:'in',at:new Date(t).toISOString(),addedAt:t,flag:'review',error:'stara greška',attempts:3,nextTryAt:Date.now()+3600000});
+ q.push({id:'stari-greska-w1',barcode:'W1',kind:'out',at:new Date(t+1000).toISOString(),addedAt:t+1000,flag:'queued',error:'stara greška',attempts:9,nextTryAt:Date.now()+3600000});
+ localStorage.setItem('balkan_kiosk_outbox_v1',JSON.stringify(q));
+ sessionStorage.removeItem('__lastScan');
+});
+await page.evaluate(()=>localStorage.removeItem('balkan_kiosk_lastscan_v1'));
+await page.reload({waitUntil:'domcontentloaded'});
+const before=(await server()).length;
+await scan('W1','in');
+await page.waitForFunction(()=>document.querySelector('#receipt').classList.contains('ok'),{timeout:5000});
+assert.equal((await server()).length,before+1,'Novi sken poslan uprkos starim zaglavljenim zapisima iste kartice');
+ok('Stari zaglavljeni zapisi iste kartice NE blokiraju novu prijavu (kvar prijavljen iz marketa)');
+await page.evaluate(()=>{const q=JSON.parse(localStorage.getItem('balkan_kiosk_outbox_v1')).filter(x=>!x.id.startsWith('stari-'));localStorage.setItem('balkan_kiosk_outbox_v1',JSON.stringify(q))});
+
+// Jedan radnik "visi" na serveru; sljedeći radnik mora dobiti zelenu potvrdu odmah, ne za 20 s.
+await page.evaluate(()=>globalThis.__hangCards=['W2']);
+await scan('W2','in');
+await page.waitForTimeout(300);
+const tHang=Date.now();await scan('W3','in');
+await page.waitForFunction(()=>document.querySelector('#receipt').classList.contains('ok'),{timeout:5000});
+const okMs=Date.now()-tHang;
+assert.ok(okMs<3000,'Sljedeći radnik potvrđen brzo i dok prethodni zapis visi: '+okMs);
+ok('Dok jedan zapis visi na serveru, sljedeći radnik dobija zelenu potvrdu za '+okMs+' ms');
+await page.evaluate(()=>globalThis.__hangCards=[]);
+await page.waitForFunction(()=>JSON.parse(localStorage.getItem('balkan_kiosk_outbox_v1')||'[]').filter(x=>x.flag!=='review').length===0,{timeout:70000});
 
 // Redoslijed: dolazak prije odlaska iste kartice
 const fin=await server();const ids=new Set(fin.map(x=>x.id));assert.equal(ids.size,fin.length);

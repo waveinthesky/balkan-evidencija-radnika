@@ -1,4 +1,5 @@
 import * as HIST from './history-2025.js';
+import * as FSX from 'https://www.gstatic.com/firebasejs/11.10.0/firebase-firestore.js';
 import {auth,db} from './firebase-shared.js';
 import {ADMIN_UID} from './firebase-config.js';
 import {onAuthStateChanged,signInWithEmailAndPassword,signOut} from 'https://www.gstatic.com/firebasejs/11.10.0/firebase-auth.js';
@@ -133,6 +134,71 @@ function submitChanges(before,after){
  }
  for(let i=0;i<items.length;i+=300){const batch=writeBatch(db);let part=items.slice(i,i+300);for(let x of part)x.value===null?batch.delete(x.ref):batch.set(x.ref,x.value);pending+=part.length;updateBanner();batch.commit().then(()=>{pending-=part.length;syncError='';updateBanner()}).catch(err=>{pending-=part.length;syncError=err.message+' — sačuvaj lokalnu kopiju i provjeri pravila!';updateBanner()});}
 }
+
+// ---------- Skeniranja danas – uživo prikaz za administratora ----------
+// Zasebno slušanje današnjih događaja sa kase: administrator odmah vidi svaku
+// prijavu/odjavu čim je Firebase primi, bez osvježavanja stranice.
+let liveUnsub=null,liveSeen=null,liveRows=[];
+function liveStyles(){
+ if(document.getElementById('balkanLiveCss'))return;
+ const st=document.createElement('style');st.id='balkanLiveCss';
+ st.textContent=`#balkanLive{position:fixed;right:18px;bottom:18px;z-index:9000;font:14px/1.4 "Segoe UI",system-ui,Arial,sans-serif;color:#16243a}
+#balkanLiveBtn{border:0;border-radius:999px;background:#14263d;color:#fff;padding:12px 18px;font-weight:700;font-size:15px;box-shadow:0 6px 18px #14263d40;cursor:pointer}
+#balkanLiveBtn .n{display:inline-block;min-width:24px;margin-left:8px;padding:1px 7px;border-radius:999px;background:#2fa36f;font-variant-numeric:tabular-nums}
+#balkanLivePanel{display:none;position:absolute;right:0;bottom:56px;width:min(440px,92vw);max-height:70vh;overflow:auto;background:#fff;border:1px solid #d6dee8;border-radius:14px;box-shadow:0 14px 40px #14263d33}
+#balkanLive.open #balkanLivePanel{display:block}
+#balkanLivePanel header{position:sticky;top:0;background:#fff;padding:14px 16px 10px;border-bottom:1px solid #e6ebf1}
+#balkanLivePanel header b{font-size:16px}#balkanLivePanel header small{display:block;color:#5d6b80}
+.bl-row{display:grid;grid-template-columns:62px 1fr auto;gap:10px;align-items:center;padding:10px 16px;border-bottom:1px solid #eef2f6}
+.bl-time{font-weight:700;font-variant-numeric:tabular-nums}.bl-name{font-weight:600}.bl-name small{display:block;color:#5d6b80;font-weight:400}
+.bl-kind{font-weight:800;font-size:12px;padding:3px 8px;border-radius:7px}.bl-in{background:#e3f4ec;color:#0e7a57}.bl-out{background:#fcefdf;color:#b85f0f}
+.bl-empty{padding:18px 16px;color:#5d6b80}
+#balkanToast{position:fixed;right:18px;bottom:84px;z-index:9001;background:#0b6b45;color:#fff;padding:12px 16px;border-radius:12px;font:600 15px/1.35 "Segoe UI",system-ui,Arial,sans-serif;box-shadow:0 8px 24px #0b6b4555;opacity:0;transform:translateY(8px);transition:.25s;pointer-events:none}
+#balkanToast.show{opacity:1;transform:none}
+@media print{#balkanLive,#balkanToast{display:none!important}}`;
+ document.head.appendChild(st);
+}
+function liveName(empId){const e=(api.state()?.employees||[]).find(x=>x.id===empId);return e?.name||'Nepoznat radnik ('+empId+')'}
+function liveLoc(id){const l=(api.state()?.locations||[]).find(x=>x.id===id);return l?.name||(id==='m1'?'Market 1':id==='m2'?'Market 2':id||'')}
+function liveTime(at){return new Date(at).toLocaleTimeString('bs-BA',{hour:'2-digit',minute:'2-digit',hourCycle:'h23'})}
+function paintLive(){
+ const box=document.getElementById('balkanLive');if(!box)return;
+ box.querySelector('.n').textContent=String(liveRows.length);
+ const list=box.querySelector('.bl-list');
+ list.innerHTML=liveRows.length?liveRows.map(v=>'<div class="bl-row"><span class="bl-time">'+text(liveTime(v.at))+'</span><span class="bl-name">'+text(liveName(v.empId))+'<small>'+text(liveLoc(v.locId))+(v.source==='barcode'?' · kartica':' · ručni unos')+'</small></span><span class="bl-kind '+(v.kind==='out'?'bl-out':'bl-in')+'">'+(v.kind==='out'?'ODLAZAK':'DOLAZAK')+'</span></div>').join(''):'<div class="bl-empty">Danas još nema prijava sa kase.</div>';
+}
+function toast(msg){
+ let t=document.getElementById('balkanToast');
+ if(!t){t=document.createElement('div');t.id='balkanToast';t.setAttribute('role','status');document.body.appendChild(t)}
+ t.textContent=msg;t.classList.add('show');clearTimeout(t._h);t._h=setTimeout(()=>t.classList.remove('show'),6000);
+}
+function startLive(){
+ if(liveUnsub||typeof FSX.query!=='function'||typeof FSX.where!=='function')return;
+ liveStyles();
+ if(!document.getElementById('balkanLive')){
+  const box=document.createElement('div');box.id='balkanLive';
+  box.innerHTML='<div id="balkanLivePanel" aria-live="polite"><header><b>Skeniranja danas</b><small>Uživo iz Firebase baze, sa svih kasa.</small></header><div class="bl-list"></div></div><button id="balkanLiveBtn" type="button">Skeniranja danas<span class="n">0</span></button>';
+  document.body.appendChild(box);
+  box.querySelector('#balkanLiveBtn').addEventListener('click',()=>box.classList.toggle('open'));
+ }
+ const d=new Date(),start=new Date(d.getFullYear(),d.getMonth(),d.getDate()).toISOString();
+ try{
+  const q=FSX.query(cloudRefs('events'),FSX.where('at','>=',start));
+  liveUnsub=FSX.onSnapshot(q,snap=>{
+   liveRows=snap.docs.map(x=>x.data()).filter(v=>v&&v.at&&!v.deleted).sort((a,b)=>b.at.localeCompare(a.at));
+   if(liveSeen){
+    for(const ch of snap.docChanges())if(ch.type==='added'&&!liveSeen.has(ch.doc.id)){const v=ch.doc.data();
+     if(v.source==='barcode')toast((v.kind==='out'?'↗ ODLAZAK: ':'↘ DOLAZAK: ')+liveName(v.empId)+' u '+liveTime(v.at)+' · '+liveLoc(v.locId));}
+   }
+   liveSeen=new Set(snap.docs.map(x=>x.id));
+   paintLive();
+  },err=>{console.warn('Skeniranja danas:',err);const l=document.querySelector('#balkanLive .bl-list');if(l)l.innerHTML='<div class="bl-empty">Ne mogu pratiti skeniranja: '+text(err.message)+'</div>'});
+  // Novi dan: ponovo postavi filter u ponoć.
+  const ms=new Date(d.getFullYear(),d.getMonth(),d.getDate()+1).getTime()-Date.now()+2000;
+  setTimeout(()=>{stopLive();startLive()},ms);
+ }catch(err){console.warn('Skeniranja danas nisu dostupna:',err)}
+}
+function stopLive(){if(liveUnsub){liveUnsub();liveUnsub=null}liveSeen=null;liveRows=[];document.getElementById('balkanLive')?.remove()}
 async function showApp(){
  await api.boot();sanitize();
  api.setSyncIndicator(status);
@@ -192,6 +258,7 @@ async function showApp(){
  try{await HIST.load(db)}catch(err){syncError='Arhiva 2025 nije dostupna: '+err.message;updateBanner();console.warn('Arhiva 2025:',err)}
  window.BALKAN_FIREBASE_READY=serverVerified;
  login.style.display='none';api.render();paintCloud();
+ startLive();
 }
 form.addEventListener('submit',async event=>{
  event.preventDefault();
@@ -209,7 +276,7 @@ form.addEventListener('submit',async event=>{
 });
 document.addEventListener('click',e=>{if(e.target.closest?.('[data-act="restore"]')){e.stopImmediatePropagation();e.preventDefault();alert('Vraćanje starih lokalnih podataka u zajedničku bazu se radi isključivo uz prethodni backup i provjeru migracije.');return}if(e.target.id==='v6SignOut'||e.target.closest?.('[data-act="logout"]')){e.stopImmediatePropagation();e.preventDefault();signOut(auth)}},true);
 onAuthStateChanged(auth,async user=>{
- if(!user){unsubs.forEach(f=>f());unsubs=[];started=false;cloudReady=false;serverVerified=false;window.BALKAN_FIREBASE_READY=false;login.style.display='grid';form.style.display='block';message.textContent='Prijavi se Firebase administratorskim nalogom.';return}
+ if(!user){stopLive();unsubs.forEach(f=>f());unsubs=[];started=false;cloudReady=false;serverVerified=false;window.BALKAN_FIREBASE_READY=false;login.style.display='grid';form.style.display='block';message.textContent='Prijavi se Firebase administratorskim nalogom.';return}
  if(user.uid!==ADMIN_UID){message.textContent='Ovaj nalog nema administratorska ovlaštenja.';form.style.display='none';await signOut(auth);return}
  rememberAdminEmail(user.email|| (adminLoginMode==='email'?emailInput.value.trim():''));
  if(started)return;started=true;message.textContent='Učitavanje zajedničke evidencije…';try{await showApp()}catch(e){message.textContent='Ne mogu učitati Firestore: '+e.message;started=false;cloudReady=false;serverVerified=false;syncError=e.message;window.BALKAN_FIREBASE_READY=false;paintCloud();form.style.display='none'}

@@ -3,124 +3,198 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>BALKAN – Prijava i odjava zaposlenih</title>
+<title>BALKAN – Dolazak i odlazak</title>
 <link rel="manifest" href="./manifest.webmanifest">
-<meta name="theme-color" content="#13283f">
+<meta name="theme-color" content="#14263d">
 <style>
-:root{--bg:#eef2f7;--ink:#1b2c44;--muted:#586981;--line:#d9e2ee;--primary:#2154b1;--green:#08613e;--green-bg:#e7f7ee;--green-border:#9bd9b5;--amber:#81520c;--amber-bg:#fff5df;--amber-border:#edcc81;--red:#a12837;--red-bg:#fff0f1;--red-border:#ecb3bb}
+:root{
+ --navy:#14263d;--navy-2:#1f3a5c;--paper:#f2f4f7;--card:#fff;--ink:#16243a;--muted:#5d6b80;--line:#dbe2eb;
+ --in:#0e7a57;--in-bg:#e3f4ec;--out:#b85f0f;--out-bg:#fcefdf;
+ --ok:#0b6b45;--ok-bg:#e1f5ea;--ok-line:#7fcca5;
+ --wait:#8a5a00;--wait-bg:#fff4d6;--wait-line:#e9c463;
+ --bad:#a61f33;--bad-bg:#fdecee;--bad-line:#eaa2ad;
+ --accent:var(--in);
+}
+body[data-mode="out"]{--accent:var(--out)}
 *{box-sizing:border-box}
-body{margin:0;font:16px/1.48 system-ui,-apple-system,"Segoe UI",Arial,sans-serif;background:var(--bg);color:var(--ink)}
+html,body{margin:0}
+body{font:16px/1.45 "Segoe UI",system-ui,-apple-system,Roboto,Arial,sans-serif;background:var(--paper);color:var(--ink);min-height:100vh}
 button,input{font:inherit}
 button{cursor:pointer}
-button:disabled{cursor:not-allowed;opacity:.55}
-header{background:#13283f;color:#fff}
-.topbar{max-width:1050px;margin:auto;padding:16px 20px;display:flex;justify-content:space-between;gap:12px;align-items:center;flex-wrap:wrap}
-.brand{font-size:23px;font-weight:850;letter-spacing:.5px;line-height:1.2}
-.brand small{display:block;font-size:12px;font-weight:450;color:#c8d6e7;letter-spacing:0;margin-top:3px}
-.topbar a{color:#fff;text-decoration:underline;text-underline-offset:3px;font-size:13px}
-.main{max-width:860px;padding:24px 18px 44px;margin:auto}
-.panel{background:#fff;border:1px solid var(--line);border-radius:18px;padding:24px;margin-bottom:16px;box-shadow:0 6px 20px #1b31500b}
-.headrow,.statusline{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap}
-h1{font-size:25px;line-height:1.2;margin:0 0 5px}
-h2{font-size:18px;line-height:1.3;margin:0}
-.subtext{font-size:13px;color:var(--muted);margin:4px 0 0}
-.pill{border-radius:30px;padding:6px 11px;background:#e8f0fa;color:#254b86;font-size:12px;font-weight:760}
-.pill.status-online{background:#dff3e8;color:#065c3a}
-.pill.status-offline{background:#fff1d6;color:#88530a}
-.modes{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin:21px 0 18px}
-.mode{border:2px solid #cbd6e4;border-radius:14px;background:#f7f9fc;color:#34435a;min-height:92px;font-size:24px;font-weight:850;letter-spacing:.3px;padding:14px}
-.mode.on{border-color:#2772bd;background:#eaf3ff;color:#164985;box-shadow:inset 0 0 0 1px #2772bd}
-.mode.out{border-color:#bd822d;background:#fff4df;color:#804c09;box-shadow:inset 0 0 0 1px #bd822d}
-.mode span{display:block;font-size:12px;font-weight:650;letter-spacing:0;margin-top:4px}
-.scanlabel{display:block;font-weight:750;margin:0 0 7px}
-#barcode{width:100%;border:2px solid #a5b7d3;border-radius:12px;min-height:61px;padding:13px 16px;font-size:23px;letter-spacing:1.4px;font-weight:700;color:#142f56}
-#barcode:focus{border-color:#2466c4;outline:3px solid #b7d0f5;outline-offset:1px}
-.scanhelp{color:var(--muted);font-size:13px;margin:8px 0}
-.btn{border:0;border-radius:11px;background:var(--primary);color:#fff;padding:14px 18px;font-weight:750}
-.btn.alt{background:#e6eef9;color:#234c91}
-.submit{display:block;width:100%;font-size:17px;margin-top:12px;min-height:51px}
-.receipt{border:3px solid var(--line);background:#f5f8fc;border-radius:18px;padding:22px;position:relative;margin-bottom:16px}
-.receipt-inner{display:flex;align-items:flex-start;gap:17px}
-.receipt-symbol{display:grid;place-items:center;width:60px;height:60px;flex-shrink:0;border-radius:17px;background:#e2eaf5;color:#375a88;font-size:32px;font-weight:900}
-.receipt-content{min-width:0;flex:1}
-.receipt-heading{font-size:13px;text-transform:uppercase;letter-spacing:.8px;font-weight:850;color:#3a567a}
-.receipt-person{font-size:clamp(27px,5vw,40px);font-weight:870;line-height:1.12;margin:7px 0 12px;overflow-wrap:anywhere}
-.receipt-meta{display:flex;gap:8px;flex-wrap:wrap}
-.receipt-meta span{font-size:15px;font-weight:750;border:1px solid #cbd6e5;padding:6px 10px;border-radius:9px;background:#fff}
-.receipt-state{margin:14px 0 4px;font-size:20px;font-weight:850}
-.receipt-hint{font-size:14px;margin:0;line-height:1.5}
-.receipt.ok{background:var(--green-bg);border-color:var(--green-border)}
-.receipt.ok .receipt-symbol{background:#c9ecd8;color:var(--green)}
-.receipt.ok .receipt-heading,.receipt.ok .receipt-state{color:var(--green)}
-.receipt.pending{background:var(--amber-bg);border-color:var(--amber-border)}
-.receipt.pending .receipt-symbol{background:#fce7b3;color:var(--amber)}
-.receipt.pending .receipt-heading,.receipt.pending .receipt-state{color:var(--amber)}
-.receipt.bad{background:var(--red-bg);border-color:var(--red-border)}
-.receipt.bad .receipt-symbol{background:#f9d5da;color:var(--red)}
-.receipt.bad .receipt-heading,.receipt.bad .receipt-state{color:var(--red)}
-.result{font-size:13px;margin-top:15px;border-top:1px solid #b5c5d658;padding-top:11px;color:#4a5b73;min-height:28px}
-.result.ok{color:var(--green)}
-.result.bad{color:var(--red)}
-.queue-grid{display:grid;grid-template-columns:1fr auto;gap:15px;align-items:center}
-#queueState{margin:8px 0 0;font-size:14px;color:#435873}
-#syncStatus{margin-top:9px;color:var(--muted);font-size:13px;min-height:20px}
-#queueRetry{max-width:220px;white-space:normal}
-.events-title{margin-bottom:13px}
-.listing{max-height:340px;overflow:auto}
-.item{border-bottom:1px solid #e6ebf2;padding:13px 0;display:flex;gap:8px;align-items:center;justify-content:space-between}
+button:disabled{cursor:not-allowed;opacity:.5}
+:focus-visible{outline:3px solid #6aa0e8;outline-offset:2px}
+
+/* Gornja traka: firma, sat, veza */
+.top{background:var(--navy);color:#fff;border-bottom:6px solid var(--accent);transition:border-color .2s}
+.top-in{max-width:1280px;margin:auto;padding:14px 22px;display:grid;grid-template-columns:auto 1fr auto;gap:18px;align-items:center}
+.brand{font-weight:800;font-size:26px;letter-spacing:.06em;line-height:1}
+.brand small{display:block;font-size:13px;font-weight:500;letter-spacing:0;color:#b9c7d9;margin-top:5px}
+.clock{text-align:center;line-height:1.1}
+#clockTime{font-size:40px;font-weight:700;font-variant-numeric:tabular-nums;letter-spacing:.02em}
+#clockDate{font-size:14px;color:#c9d5e4}
+.top-right{display:flex;flex-direction:column;align-items:flex-end;gap:8px}
+.top-right a{color:#c9d5e4;font-size:13px;text-decoration:none;border-bottom:1px solid #5c7392}
+.top-right a:hover{color:#fff}
+.pill{border-radius:999px;padding:6px 12px;font-size:13px;font-weight:700;white-space:nowrap}
+.status-online{background:#d6f2e3;color:#08603d}
+.status-offline{background:#ffe9bd;color:#7a4a00}
+.status-neutral{background:#e3ebf6;color:#28456c}
+
+/* Glavni dio */
+.wrap{max-width:1280px;margin:auto;padding:22px;display:grid;grid-template-columns:minmax(300px,420px) 1fr;gap:22px;align-items:start}
+.panel{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:20px}
+
+/* Izbor radnje */
+.modes{display:grid;gap:12px}
+.mode{display:flex;align-items:center;gap:16px;text-align:left;border:3px solid var(--line);background:#f8fafc;color:#4a586c;border-radius:14px;padding:18px 20px;min-height:104px;transition:background .15s,border-color .15s,color .15s}
+.mode .arrow{font-size:40px;line-height:1;font-weight:700;width:46px;text-align:center}
+.mode b{display:block;font-size:30px;letter-spacing:.03em;line-height:1.05}
+.mode small{display:block;font-size:14px;font-weight:500;margin-top:4px}
+.mode-in.on{border-color:var(--in);background:var(--in-bg);color:var(--in)}
+.mode-out.out{border-color:var(--out);background:var(--out-bg);color:var(--out)}
+.mode:not(.on):not(.out):hover{border-color:#b7c3d3}
+
+form{margin-top:16px}
+.scanlabel{display:block;font-weight:700;font-size:14px;margin:0 0 6px;color:var(--muted)}
+#barcode{width:100%;min-width:0;border:2px solid #b4c1d3;border-radius:12px;min-height:58px;padding:12px 16px;font-size:24px;font-weight:700;letter-spacing:.08em;color:var(--navy);background:#fff}
+#barcode:focus{border-color:var(--accent);outline:4px solid color-mix(in srgb,var(--accent) 22%,transparent);outline-offset:0}
+.scanrow{display:flex;gap:10px;align-items:center;margin-top:10px}
+.scanhelp{color:var(--muted);font-size:13px;margin:0;flex:1}
+.btn{border:0;border-radius:10px;background:var(--navy-2);color:#fff;padding:11px 16px;font-weight:700;font-size:15px}
+.btn.ghost{background:#e7edf5;color:#20406a}
+
+/* Rezultat skeniranja – najvažniji element ekrana */
+.receipt{border-radius:18px;border:3px solid var(--line);background:var(--card);overflow:hidden;min-height:360px;display:flex;flex-direction:column}
+.receipt-band{display:flex;align-items:center;gap:14px;padding:16px 24px;background:#e9eef4;color:#33507a}
+.receipt-symbol{width:52px;height:52px;border-radius:50%;display:grid;place-items:center;font-size:30px;font-weight:800;background:#fff;flex-shrink:0}
+.receipt-state{font-size:26px;font-weight:800;margin:0;line-height:1.15}
+.receipt-body{padding:22px 26px 18px;flex:1;display:flex;flex-direction:column}
+.receipt-heading{font-size:15px;font-weight:600;color:var(--muted)}
+.receipt-person{font-size:clamp(34px,5.2vw,60px);font-weight:800;line-height:1.05;margin:6px 0 18px;overflow-wrap:anywhere}
+.receipt-meta{display:flex;gap:12px;flex-wrap:wrap;align-items:stretch}
+#receiptKind{font-size:22px;font-weight:800;padding:8px 16px;border-radius:10px;background:var(--in-bg);color:var(--in)}
+#receiptKind[data-kind="out"]{background:var(--out-bg);color:var(--out)}
+#receiptTime{font-size:22px;font-weight:700;padding:8px 16px;border-radius:10px;background:#eef2f7;font-variant-numeric:tabular-nums}
+.receipt-hint{font-size:16px;margin:18px 0 0;color:#34445c;max-width:65ch}
+.result{font-size:13px;margin-top:auto;padding-top:14px;color:var(--muted)}
+.receipt.ok{border-color:var(--ok-line)}
+.receipt.ok .receipt-band{background:var(--ok);color:#fff}
+.receipt.ok .receipt-symbol{color:var(--ok)}
+.receipt.pending{border-color:var(--wait-line)}
+.receipt.pending .receipt-band{background:var(--wait-bg);color:var(--wait)}
+.receipt.pending .receipt-symbol{color:var(--wait)}
+.receipt.bad{border-color:var(--bad-line)}
+.receipt.bad .receipt-band{background:var(--bad);color:#fff}
+.receipt.bad .receipt-symbol{color:var(--bad)}
+.receipt.idle .receipt-person{color:#9aa7b8}
+
+
+
+
+/* Slanje i lista */
+.lower{grid-column:1/-1;display:grid;grid-template-columns:1fr minmax(300px,420px);gap:22px;align-items:start}
+.sync{display:flex;align-items:center;gap:16px;border-left:6px solid var(--ok-line)}
+#queueBox[data-state="pending"]{border-left-color:var(--wait-line)}
+#queueBox[data-state="bad"]{border-left-color:var(--bad)}
+#queueCount{font-size:38px;font-weight:800;min-width:56px;text-align:center;font-variant-numeric:tabular-nums}
+.sync-text{flex:1;min-width:0}
+#queueState{font-weight:700}
+#syncStatus{font-size:13px;color:var(--muted);margin-top:3px}
+#syncStatus[data-tone="ok"]{color:var(--ok)}
+#syncStatus[data-tone="bad"]{color:var(--bad)}
+h2{font-size:18px;margin:0}
+.listhead{display:flex;justify-content:space-between;align-items:center;margin-bottom:6px}
+#location{background:#e3ebf6;color:#28456c}
+.listing{max-height:420px;overflow:auto}
+.item{display:flex;gap:12px;align-items:center;padding:11px 2px;border-bottom:1px solid #e8edf3}
 .item:last-child{border-bottom:0}
-.item-info{min-width:0}
-.item-name{font-weight:760;overflow-wrap:anywhere}
-.item-sub{font-size:12px;color:var(--muted);margin-top:2px}
+.dot{width:10px;height:10px;border-radius:50%;flex-shrink:0;background:var(--wait-line)}
+.item.ok .dot{background:var(--ok)}
+.item.bad .dot{background:var(--bad)}
+.item-info{flex:1;min-width:0}
+.item-name{font-weight:700;overflow-wrap:anywhere}
+.item-sub{font-size:13px;color:var(--muted)}
+.k-in{color:var(--in)}.k-out{color:var(--out)}
 .item-right{text-align:right;flex-shrink:0}
-.item-time{font-size:13px;font-weight:730}
-.item-state{display:block;margin-top:3px;font-size:12px;font-weight:730}
-.item-state.ok{color:var(--green)}
-.item-state.pending{color:var(--amber)}
-.item-state.bad{color:var(--red)}
-.mini{font-size:12px;color:var(--muted);line-height:1.55}
-footer{max-width:860px;margin:auto;padding:0 20px 30px}
-@media(max-width:600px){.main{padding:12px 11px 25px}.panel{padding:17px;border-radius:15px;margin-bottom:11px}.topbar{padding:13px 14px}.mode{min-height:84px;font-size:21px}.receipt{padding:17px;border-radius:15px}.receipt-inner{gap:12px}.receipt-symbol{width:45px;height:45px;font-size:26px}.receipt-person{font-size:29px}.queue-grid{grid-template-columns:1fr}#queueRetry{max-width:none;width:100%}}
+.item-time{font-size:13px;font-weight:600;font-variant-numeric:tabular-nums}
+.item-state{display:block;font-size:11px;font-weight:800;margin-top:2px}
+.item-state.ok{color:var(--ok)}.item-state.pending{color:var(--wait)}.item-state.bad{color:var(--bad)}
+.empty{color:var(--muted);padding:18px 0}
+.legend{font-size:13px;color:var(--muted);margin:12px 0 0}
+#diag summary{font-weight:700;cursor:pointer}
+#diag p{font-size:13px;color:var(--muted)}
+#diagOut{list-style:none;padding:0;margin:10px 0 0;font-size:14px}
+#diagOut li{padding:8px 0;border-bottom:1px solid #edf1f5}
+#diagOut li span{display:block;color:var(--muted);font-size:13px}
+#diagOut li.ok b{color:var(--ok)}#diagOut li.bad b{color:var(--bad)}
+.side{display:grid;gap:22px}
+
+@media (max-width:900px){
+ .wrap{grid-template-columns:minmax(0,1fr);padding:12px;gap:12px}
+ .lower{grid-template-columns:minmax(0,1fr);gap:12px}
+ .panel{padding:14px}
+ .modes{gap:8px}
+ .sync{flex-wrap:wrap}
+ .top-in{grid-template-columns:1fr auto;padding:12px 14px}
+ .clock{grid-column:1/-1;grid-row:2;text-align:left;display:flex;gap:12px;align-items:baseline}
+ #clockTime{font-size:28px}
+ .modes{grid-template-columns:minmax(0,1fr) minmax(0,1fr)}
+ .mode{min-height:80px;padding:10px;gap:6px}.mode b{font-size:19px}.mode small{font-size:12px}.mode .arrow{font-size:28px;width:auto}
+ .receipt{min-height:0}.receipt-person{font-size:34px}
+}
 </style>
 </head>
-<body>
-<header><div class="topbar"><div class="brand">BALKAN<small>Evidencija radnog vremena</small></div><a href="./admin.html">Administracija 🔒</a></div></header>
-<main class="main">
-<section id="kiosk">
- <div class="panel">
-  <div class="headrow"><div><h1>Prijava i odjava</h1><p class="subtext">Izaberi radnju, zatim prinesi karticu skeneru.</p></div><span class="pill" id="connection">Provjera veze…</span></div>
-  <div class="modes"><button class="mode on" id="modeIn" type="button">↘ DOLAZAK<span>Početak smjene</span></button><button class="mode" id="modeOut" type="button">↗ ODLAZAK<span>Kraj smjene</span></button></div>
+<body data-mode="in">
+<header class="top"><div class="top-in">
+ <div class="brand">BALKAN<small>Dolazak i odlazak zaposlenih</small></div>
+ <div class="clock" aria-live="off"><div id="clockTime">--:--:--</div><div id="clockDate"></div></div>
+ <div class="top-right"><span class="pill status-neutral" id="connection">Provjera veze…</span><a href="./admin.html">Administracija</a></div>
+</div></header>
+
+<main class="wrap" id="kiosk">
+ <section class="panel" aria-label="Izbor radnje i skeniranje">
+  <div class="modes" role="group" aria-label="Radnja">
+   <button class="mode mode-in on" id="modeIn" type="button" aria-pressed="true"><span class="arrow" aria-hidden="true">↘</span><span><b>DOLAZAK</b><small>Početak smjene</small></span></button>
+   <button class="mode mode-out" id="modeOut" type="button" aria-pressed="false"><span class="arrow" aria-hidden="true">↗</span><span><b>ODLAZAK</b><small>Kraj smjene</small></span></button>
+  </div>
   <form id="scanForm">
    <label class="scanlabel" for="barcode">Barkod kartice</label>
-   <input id="barcode" autofocus autocorrect="off" autocomplete="off" autocapitalize="off" spellcheck="false" enterkeyhint="done" placeholder="Skeniraj karticu ovdje" required>
-   <p class="scanhelp">Skener automatski prenosi kod. Kartica se potvrđuje tipkom Enter ili dugmetom ispod.</p>
-   <button class="btn submit" type="submit">Potvrdi skeniranje</button>
+   <input id="barcode" autofocus autocorrect="off" autocomplete="off" autocapitalize="off" spellcheck="false" enterkeyhint="done" placeholder="Skeniraj karticu" required>
+   <div class="scanrow"><p class="scanhelp">Skener sam upisuje kod i potvrđuje ga.</p><button class="btn ghost" type="submit">Potvrdi ručno</button></div>
   </form>
- </div>
+ </section>
+
  <section class="receipt idle" id="receipt" role="status" aria-live="polite" aria-atomic="true">
-  <div class="receipt-inner">
-   <div class="receipt-symbol" id="receiptIcon" aria-hidden="true">⌁</div>
-   <div class="receipt-content">
-    <div class="receipt-heading" id="receiptHeading">Spremno za skeniranje</div>
-    <div class="receipt-person" id="receiptPerson">Prinesi karticu</div>
-    <div class="receipt-meta"><span id="receiptKind">DOLAZAK</span><span id="receiptTime">Čeka se skeniranje</span></div>
-    <p class="receipt-state" id="receiptState">Još nema prijave</p>
-    <p class="receipt-hint" id="receiptHint">Nakon skeniranja ovdje će pisati rezultat, vrijeme i da li je upis potvrđen.</p>
-   </div>
+  <div class="receipt-band"><div class="receipt-symbol" id="receiptIcon" aria-hidden="true">⌁</div><p class="receipt-state" id="receiptState">ČEKA SE SKENIRANJE</p></div>
+  <div class="receipt-body">
+   <div class="receipt-heading" id="receiptHeading">Spremno za skeniranje</div>
+   <div class="receipt-person" id="receiptPerson">Prinesi karticu</div>
+   <div class="receipt-meta"><span id="receiptKind" data-kind="in">↘ DOLAZAK</span><span id="receiptTime">Čeka se skeniranje</span></div>
+   <p class="receipt-hint" id="receiptHint">Izaberi DOLAZAK ili ODLAZAK, pa skeniraj karticu.</p>
+   <div id="status" class="result">Spremno za skeniranje.</div>
   </div>
-  <div id="status" class="result">Spremno za skeniranje.</div>
  </section>
- <section class="panel" aria-labelledby="queueHeading">
-  <div class="queue-grid"><div><h2 id="queueHeading">Slanje u centralnu bazu</h2><div id="queueState">Provjeravam sačuvane zapise…</div><div id="syncStatus" aria-live="polite">Čekanje</div></div>
-  <button id="queueRetry" class="btn alt" type="button">⟳ Pošalji čekajuće zapise</button></div>
-  <p class="mini">Žuto = sačuvano na ovom računaru, nije još u centralnoj bazi. Zeleno = Firebase je potvrdio upis. Ako postoje zapisi na čekanju, nemoj brisati podatke preglednika.</p>
- </section>
- <section class="panel">
-  <div class="headrow events-title"><h2>Posljednja skeniranja</h2><span class="pill" id="location">Oba marketa</span></div>
-  <div id="events" class="listing">Nema skeniranja na ovom računaru.</div>
-  <p class="mini">Lista prikazuje skeniranja obavljena na ovom računaru; centralni zbir se prati u administraciji.</p>
- </section>
-</section>
+
+ <div class="lower">
+  <section class="panel">
+   <div class="listhead"><h2>Posljednja skeniranja na ovoj kasi</h2><span class="pill" id="location">Market</span></div>
+   <div id="events" class="listing"><div class="empty">Nema skeniranja na ovom računaru.</div></div>
+   <p class="legend">Zelena tačka: potvrđeno u centralnoj bazi. Žuta: sačuvano na ovom računaru, čeka slanje. Crvena: potrebna intervencija.</p>
+  </section>
+  <div class="side">
+   <section class="panel sync" id="queueBox" data-state="ok" aria-live="polite">
+    <div id="queueCount">0</div>
+    <div class="sync-text"><div id="queueState">Provjeravam sačuvane zapise…</div><div id="syncStatus">Čekanje</div></div>
+    <button id="queueRetry" class="btn ghost" type="button">Pošalji sada</button>
+   </section>
+   <details class="panel" id="diag">
+    <summary>Provjera veze s Firebaseom</summary>
+    <p>Provjerava internet, prijavu kase na Firebase i čitanje posljednje kartice. Ne upisuje ništa u bazu.</p>
+    <button class="btn" id="diagRun" type="button">Pokreni provjeru</button>
+    <ul id="diagOut"></ul>
+   </details>
+  </div>
+ </div>
 </main>
-<script type="module" src="./kiosk.js?v=20261019fifo5"></script>
+<script type="module" src="./kiosk.js?v=20261019v6"></script>
 </body></html>

@@ -1,3 +1,19 @@
+# BALKAN – provjera Firebase veze sa kase (verzija 19.10.2026.)
+
+Na ekranu kase otvori **Provjera veze s Firebaseom → Pokreni provjeru**. Provjera ne upisuje ništa u bazu.
+
+| Rezultat | Značenje | Šta uraditi |
+|---|---|---|
+| ✗ Firebase prijava kase, `auth/operation-not-allowed` ili `auth/admin-restricted-operation` | Anonimna prijava nije uključena | Firebase konzola → Authentication → Sign-in method → **Anonymous → Enable** |
+| ✗ Čitanje kartice, `permission-denied` | Objavljena pravila ne dozvoljavaju kasi čitanje kartice | Objavi `firestore.rules` (koraci ispod) |
+| ✗ Čitanje kartice, „nije pronađena ili nije aktivna“ | Radnik nema indeks kartice u bazi | U administraciji otvori i sačuvaj radnika (ponovo upisuje `badges/KOD`) |
+| ✗ Posljednja greška upisa, `permission-denied` | Objavljena pravila odbijaju upis dolaska/odlaska | Objavi `firestore.rules` (koraci ispod) |
+| Sve ✓, a zapisi i dalje čekaju | Mreža/vatrozid blokira Firestore | Provjeri antivirus/proxy na računaru marketa |
+
+Kada je uzrok otklonjen, na kasi klikni **Pošalji sada**. Zapisi se šalju s originalnim vremenom, bez dupliranja.
+
+---
+
 # BALKAN – ispravka Firebase odbijenih prijava
 
 ## Zašto se pojavljuje “Firebase odbija upis”
