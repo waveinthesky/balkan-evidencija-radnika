@@ -2014,6 +2014,222 @@ document.getElementById('app').addEventListener('click',async event=>{
  try{await save();render()}catch(err){alert('Godišnji fond nije potvrđeno sačuvan: '+err.message)}
 },true);
 
+// ===================== KALENDAR v2 (19.10.2026.) =====================
+// Jedan klik na dan: N → P → GO → N (budući dani: GO ↔ automatski; neradni dani: P ↔ automatski).
+// Dani pod rješenjem o GO, bolovanjem ili praznikom se NE mijenjaju klikom: otvaraju se detalji.
+// Skeniranja se nikad ne brišu klikom; promjena je ručni status (override) i može se poništiti.
+(function(){
+ const CSS=`
+.bk-cal-bar{display:flex;flex-wrap:wrap;align-items:center;gap:14px 22px;padding:16px 20px!important}
+.bk-cal-nav{display:flex;align-items:center;gap:6px}
+.bk-cal-nav h2{margin:0 8px;font-size:26px;letter-spacing:-.01em;min-width:200px;text-align:center}
+.bk-cal-arrow{width:40px;height:40px;border-radius:10px;border:1px solid #d5dde8;background:#fff;font-size:20px;font-weight:700;color:#24467a;cursor:pointer}
+.bk-cal-arrow:hover{background:#eef3fa}
+.bk-cal-today{border:1px solid #d5dde8;background:#fff;border-radius:10px;padding:9px 14px;font-weight:700;color:#24467a;cursor:pointer}
+.bk-cal-locs{display:flex;background:#eef2f7;border-radius:11px;padding:4px;gap:4px}
+.bk-cal-locs button{border:0;background:transparent;border-radius:8px;padding:8px 16px;font-weight:700;color:#4d5d73;cursor:pointer}
+.bk-cal-locs button.on{background:#fff;color:#14366b;box-shadow:0 1px 3px #1b2c4426}
+.bk-cal-pick{display:flex;gap:8px;align-items:center;margin-left:auto}
+.bk-cal-pick select,.bk-cal-pick input{height:38px;border:1px solid #d5dde8;border-radius:9px;padding:0 10px;background:#fff;font:inherit}
+.bk-cal-pick input{width:88px}
+.bk-cal-sick{display:flex;align-items:center;gap:12px;flex-wrap:wrap;background:#f6f1fd;border:1px solid #e1d4f6;color:#4f3a7a;border-radius:10px;padding:8px 12px;margin:0 0 12px;font-size:13px}
+.bk-cal-sick b{color:#5b3fa0}
+.bk-cal-sick .btn{margin-left:auto}
+.bk-cal-head{display:flex;align-items:flex-end;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-bottom:10px}
+.bk-cal-head h3{margin:0;font-size:15px;color:#5d6b80;font-weight:600}
+.bk-cal-hint{font-size:13px;color:#3b4b63;background:#eef3fa;border-radius:8px;padding:6px 10px}
+.bk-cal-hint b{font-weight:800}
+.bk-cal .calendar{border-collapse:separate!important;border-spacing:0!important}
+.bk-cal .calendar thead th{background:#fff!important;border-bottom:2px solid #dde4ee!important;padding:4px 0 6px!important;color:#33445e;font-size:13px!important;font-weight:800;line-height:1.05}
+.bk-cal .calendar thead th .weekday-tiny{display:block;font-size:10px;font-weight:600;color:#8592a6;margin-top:2px;letter-spacing:0}
+.bk-cal .calendar th.we,.bk-cal .calendar td.we{background:#f5f7fa!important}
+.bk-cal .calendar thead th.we{color:#94a0b2}
+.bk-cal .calendar th.today{color:#fff!important;background:#1f4f8f!important;border-radius:8px 8px 0 0}
+.bk-cal .calendar th.today .weekday-tiny{color:#cfe0f7}
+.bk-cal .calendar td.today{background:#eaf1fb!important}
+.bk-cal .calendar th.hol::after{content:'';display:block;width:5px;height:5px;border-radius:50%;background:#2d8c70;margin:2px auto 0}
+.bk-cal .calendar td{border-bottom:1px solid #eef1f5!important;border-right:0!important;padding:3px 0!important}
+.bk-cal .calendar tbody tr:hover td{background:#f8fbff!important}
+.bk-cal .calendar tbody tr:hover td.today{background:#e1ecfa!important}
+.bk-cal .calendar td.name{padding:6px 8px!important;line-height:1.2}
+.bk-cal .calendar td.name b{display:block;font-size:13px;color:#16243a;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.bk-cal .calendar td.name small{display:block;font-size:11px;color:#738198;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.bk-cal .calendar td.name small i{font-style:normal;font-weight:700}
+.bk-cal .calendar td.name small .sP{color:#0b7a52}.bk-cal .calendar td.name small .sGO{color:#1f5fb8}.bk-cal .calendar td.name small .sN{color:#b42a40}
+.bk-cal .calendar td.total{font-size:14px!important;font-weight:800;color:#0b6b45}
+.bk-cal .calendar button.cell{height:30px!important;max-width:34px!important;border-radius:7px!important;font-size:11px!important;font-weight:800;border:0;cursor:pointer;transition:transform .08s}
+.bk-cal .calendar button.cell:hover{transform:scale(1.08);outline:2px solid #4b7fd1;outline-offset:1px}
+.bk-cal .calendar button.cell:active{transform:scale(.94)}
+.bk-cal .cell.P{background:#d3f1e2!important;color:#06633f!important}
+.bk-cal .cell.N{background:#ffdfe4!important;color:#a8203a!important}
+.bk-cal .cell.GO{background:#d9e8ff!important;color:#164f9e!important}
+.bk-cal .cell.BO{background:#ece2fd!important;color:#5f3f9c!important}
+.bk-cal .cell.IA{background:#fbc9cf!important;color:#8c1426!important}
+.bk-cal .cell.RP{background:#ffe9bf!important;color:#8a5200!important}
+.bk-cal .cell.ND{background:transparent!important;color:#b2bccb!important}
+.bk-cal .cell.F{background:#f3f5f8!important;color:#c3cad5!important}
+.bk-cal .cell.H,.bk-cal .cell.VH{background:#d5efe6!important;color:#13664f!important}
+.bk-cal .cell.manual{box-shadow:inset 0 -3px 0 #00000026}
+.bk-cal .cell.selected{outline:3px solid #14366b!important;outline-offset:1px!important}
+.bk-cal-legend{display:flex;flex-wrap:wrap;gap:6px 14px;margin-top:12px;font-size:12px;color:#4d5d73}
+.bk-cal-legend span{display:inline-flex;align-items:center;gap:6px}
+.bk-cal-legend .cell{display:inline-grid!important;place-items:center;width:26px!important;height:20px!important;border-radius:5px!important;font-size:10px!important;font-weight:800;margin:0!important}
+.bk-cal-legend .mk{width:26px;height:20px;border-radius:5px;background:#e7ecf3;box-shadow:inset 0 -3px 0 #00000026}
+#bkCalToast{position:fixed;left:50%;bottom:22px;transform:translateX(-50%) translateY(10px);opacity:0;z-index:9500;background:#14263d;color:#fff;border-radius:12px;padding:10px 12px 10px 16px;display:flex;align-items:center;gap:14px;box-shadow:0 10px 30px #14263d55;font:600 14px/1.3 "Segoe UI",system-ui,Arial,sans-serif;transition:.2s;pointer-events:none;max-width:92vw}
+#bkCalToast.show{opacity:1;transform:translateX(-50%);pointer-events:auto}
+#bkCalToast button{border:0;border-radius:8px;background:#fff;color:#14263d;font-weight:800;padding:7px 12px;cursor:pointer}
+#bkCalToast.err{background:#a61f33}
+@media (max-width:760px){
+ .bk-cal-nav h2{font-size:19px;min-width:0}
+ .bk-cal-pick{margin-left:0}
+ .bk-cal .calendar thead th{font-size:8px!important}
+ .bk-cal .calendar thead th .weekday-tiny{display:none}
+ .bk-cal .calendar td.name b{font-size:9px}
+ .bk-cal .calendar td.name small{display:none}
+ .bk-cal .calendar button.cell{height:22px!important;border-radius:3px!important;font-size:7px!important}
+ .bk-cal .calendar td.total{font-size:9px!important}
+}
+@media print{#bkCalToast{display:none!important}}`;
+ if(!document.getElementById('bkCalCss')){const st=document.createElement('style');st.id='bkCalCss';st.textContent=CSS;document.head.appendChild(st)}
+
+ const pad=n=>String(n).padStart(2,'0');
+ const niceDate=d=>{const [y,m,dd]=d.split('-');return Number(dd)+'.'+Number(m)+'.'+y+'.'};
+ const CYCLE={N:'P',P:'GO',GO:'N'};
+
+ function autoStatus(worker,date,loc){
+  // Status kakav bi dan imao BEZ ručne izmjene (skeniranja, praznici, raspored).
+  const saved=S.overrides;
+  S.overrides=saved.filter(o=>!(o.empId===worker.id&&o.date===date&&o.locId===loc));
+  try{return dayStatus(worker,date,loc)}finally{S.overrides=saved}
+ }
+ function lockReason(worker,date,loc){
+  if(!employeeAt(worker,date)||assigned(worker,date)!==loc)return 'Radnik nema radni odnos ili dodjelu u ovom objektu na taj dan.';
+  if(existingLeaveDay(worker.id,date))return 'Ovaj dan je dio izdatog rješenja o godišnjem odmoru. Mijenja se u meniju Godišnji odmori.';
+  if(sickLeaveAt(worker,date))return 'Radnik je na bolovanju. Bolovanje se mijenja u Radnici → Bolovanje.';
+  if(holiday(loc,date,worker))return 'Na ovaj dan je praznik ili odsustvo. Mijenja se u meniju Praznici i odsustva.';
+  return '';
+ }
+ function nextStatus(worker,date,loc,current){
+  const auto=autoStatus(worker,date,loc);
+  if(date>today())return current==='GO'?null:'GO';                 // planiranje odmora unaprijed
+  if(auto==='ND'||!isWorking(loc,date))return current==='P'?null:'P'; // neradni dan: rad ↔ automatski
+  const next=CYCLE[current]||'P';
+  return next===auto?null:next;                                    // null = vrati automatski status
+ }
+
+ let saving=Promise.resolve(),toastTimer=null,undo=null;
+ function bkToast(text,{error=false,canUndo=false}={}){
+  let t=document.getElementById('bkCalToast');
+  if(!t){t=document.createElement('div');t.id='bkCalToast';t.setAttribute('role','status');document.body.appendChild(t);
+   t.addEventListener('click',e=>{if(e.target.closest('[data-bk-undo]'))applyUndo()})}
+  t.className=error?'err':'';
+  t.innerHTML='<span>'+esc(text)+'</span>'+(canUndo?'<button type="button" data-bk-undo="1">Poništi</button>':'');
+  void t.offsetWidth;t.classList.add('show');
+  clearTimeout(toastTimer);toastTimer=setTimeout(()=>t.classList.remove('show'),canUndo?7000:4500);
+ }
+ function persist(){
+  saving=saving.then(()=>save()).catch(err=>{bkToast('Izmjena NIJE sačuvana: '+(err?.message||err),{error:true});throw err}).catch(()=>{});
+  return saving;
+ }
+ function setDay(worker,date,loc,status,note){
+  const before=S.overrides.find(o=>o.empId===worker.id&&o.date===date&&o.locId===loc)||null;
+  S.overrides=S.overrides.filter(o=>!(o.empId===worker.id&&o.date===date&&o.locId===loc));
+  if(status)S.overrides.push({id:uid(),empId:worker.id,locId:loc,date,status,note,updatedAt:new Date().toISOString()});
+  return before?structuredClone(before):null;
+ }
+ function applyUndo(){
+  if(!undo)return;
+  const {worker,date,loc,before,label}=undo;undo=null;
+  S.overrides=S.overrides.filter(o=>!(o.empId===worker.id&&o.date===date&&o.locId===loc));
+  if(before)S.overrides.push(before);
+  audit('Poništena brza izmjena u kalendaru',label);
+  render();persist();
+  bkToast('Vraćeno: '+worker.name+' · '+niceDate(date));
+ }
+ function quickClick(btn){
+  const worker=S.employees.find(e=>e.id===btn.dataset.emp);if(!worker)return;
+  const date=btn.dataset.day,loc=btn.dataset.loc||calLoc;
+  chosenDate=date;chosenEmp=worker.id;
+  const lock=lockReason(worker,date,loc);
+  if(lock){render();bkToast(lock);return}
+  const current=dayStatus(worker,date,loc);
+  const next=nextStatus(worker,date,loc,current);
+  const before=setDay(worker,date,loc,next,'Brzi klik u kalendaru');
+  const after=dayStatus(worker,date,loc);
+  const label=worker.name+' '+date+': '+current+' → '+after;
+  audit('Brza izmjena u kalendaru',label+(next?'':' (automatski)'));
+  undo={worker,date,loc,before,label};
+  render();
+  bkToast(worker.name+' · '+niceDate(date)+' · '+(LEGEND[current]?.[0]||current)+' → '+(LEGEND[after]?.[0]||after)+(next?'':' (automatski)'),{canUndo:true});
+  persist();
+ }
+ function openFromElsewhere(btn){
+  // Dugme "Detalji" iz izvještaja: otvori kalendar na tom danu, BEZ promjene statusa.
+  const date=btn.dataset.day;if(!date)return;
+  chosenDate=date;chosenEmp=btn.dataset.emp||null;
+  if(btn.dataset.loc)calLoc=btn.dataset.loc;
+  calY=Number(date.slice(0,4));calM=Number(date.slice(5,7));
+  route='kalendar';toast='';render();
+  setTimeout(()=>document.getElementById('dayPanel')?.scrollIntoView({behavior:'smooth',block:'start'}),50);
+ }
+ document.getElementById('app').addEventListener('click',event=>{
+  const t=event.target.closest('[data-day],[data-bk-loc],[data-bk-today]');
+  if(!t)return;
+  if(t.matches('[data-bk-loc]')){event.preventDefault();event.stopImmediatePropagation();calLoc=t.dataset.bkLoc;chosenEmp=null;render();return}
+  if(t.matches('[data-bk-today]')){event.preventDefault();event.stopImmediatePropagation();const d=today();calY=Number(d.slice(0,4));calM=Number(d.slice(5,7));render();return}
+  event.preventDefault();event.stopImmediatePropagation();
+  if(t.closest('.bk-cal')&&t.matches('button.cell'))quickClick(t);
+  else openFromElsewhere(t);
+ },true);
+
+ const _calendarBeforeV2=calendar; // čuva se samo kao rezerva
+ calendar=function(){
+  const allEmployees=monthEmployees(calLoc,calY,calM);
+  const monthEnd=ymd(calY,calM,new Date(calY,calM,0).getDate());
+  const target=ymd(calY,calM,1)<=today()&&monthEnd>=today()?today():monthEnd;
+  const sick=allEmployees.filter(e=>sickLeaveAt(e,target));
+  const employees=showSickOnCalendar?allEmployees:allEmployees.filter(e=>!sickLeaveAt(e,target));
+  const n=new Date(calY,calM,0).getDate(),days=Array.from({length:n},(_,i)=>ymd(calY,calM,i+1)),now=today();
+  const dayClass=d=>[!isWorking(calLoc,d)?'we':'',d===now?'today':'',holiday(calLoc,d)?'hol':''].filter(Boolean).join(' ');
+  const classes=days.map(dayClass);
+  const head=days.map((d,i)=>'<th class="'+classes[i]+'" title="'+esc(niceDate(d))+'">'+(i+1)+'<span class="weekday-tiny">'+WEEK[wd(d)]+'</span></th>').join('');
+  const body=employees.map(e=>{
+   const cells=days.map((d,i)=>{
+    const status=dayStatus(e,d,calLoc),man=override(e.id,d,calLoc)?' manual':'';
+    const sel=chosenEmp===e.id&&chosenDate===d?' selected':'';
+    return '<td class="'+classes[i]+'"><button type="button" class="cell '+status+man+sel+'" title="'+esc(e.name)+' · '+esc(niceDate(d))+' · '+esc(statusText(status))+(man?' (ručno)':'')+'" data-day="'+d+'" data-emp="'+esc(e.id)+'" data-loc="'+esc(calLoc)+'">'+esc(LEGEND[status]?.[0]||'–')+'</button></td>';
+   }).join('');
+   const m=monthMetrics(e,calLoc,calY,calM);
+   const stats='<i class="sP">P '+m.P+'</i>'+(m.GO?' · <i class="sGO">GO '+m.GO+'</i>':'')+(m.N?' · <i class="sN">N '+m.N+'</i>':'')+(m.BO?' · BO '+m.BO:'');
+   return '<tr><td class="name" title="'+esc(e.name)+'"><b>'+esc(e.name)+'</b><small>'+stats+'</small></td>'+cells+'<td class="total" title="Radni dani (P + za provjeru)">'+(m.P+m.RP)+'</td></tr>';
+  }).join('');
+  const chosen=S.employees.find(e=>e.id===chosenEmp);
+  const locButtons=S.locations.map(l=>'<button type="button" data-bk-loc="'+esc(l.id)+'" class="'+(l.id===calLoc?'on':'')+'">'+esc(l.name)+'</button>').join('');
+  const legendKeys=['P','N','GO','BO','IA','RP','ND','H','VH','F'];
+  const legend=legendKeys.filter(k=>LEGEND[k]).map(k=>'<span><b class="cell '+k+'">'+esc(LEGEND[k][0])+'</b>'+esc(LEGEND[k][1])+'</span>').join('')+'<span><b class="mk"></b>Ručno izmijenjen dan</span>';
+  const sickBar='<div class="bk-cal-sick"><span>'+(sick.length?'<b>Radnici na bolovanju:</b> '+sick.map(e=>esc(e.name)+' (od '+esc(sickLeaveAt(e,target).from)+')').join(', ')+(showSickOnCalendar?'':' · skriveni iz tabele'):'<b>Radnici na bolovanju:</b> nema u ovom periodu.')+'</span>'+
+   '<button class="btn small" type="button" data-toggle-sick-calendar="1">'+(showSickOnCalendar?'Sakrij bolovanja u kalendaru':'Prikaži bolovanja u kalendaru')+'</button></div>';
+  return pageTitle('Mjesečni kalendar','Jedan klik na dan mijenja status; detalji dana su ispod tabele.',
+   '<button class="btn" data-act="exportcsv">↓ Excel (CSV)</button><button class="btn" data-act="print">⎙ Štampaj / PDF</button><button class="btn primary" data-act="manual">+ Ručna evidencija</button>')+
+   '<section class="panel bk-cal-bar">'+
+    '<div class="bk-cal-nav"><button class="bk-cal-arrow" type="button" data-act="prevmonth" aria-label="Prethodni mjesec">‹</button><h2>'+MONTHS[calM-1]+' '+calY+'.</h2><button class="bk-cal-arrow" type="button" data-act="nextmonth" aria-label="Sljedeći mjesec">›</button></div>'+
+    '<button class="bk-cal-today" type="button" data-bk-today="1">Danas</button>'+
+    '<div class="bk-cal-locs" role="group" aria-label="Objekat">'+locButtons+'</div>'+
+    '<div class="bk-cal-pick"><select data-field="calLoc" aria-label="Objekat" hidden>'+selections(calLoc)+'</select>'+
+     '<select data-field="calM" aria-label="Mjesec">'+MONTHS.map((m,i)=>'<option value="'+(i+1)+'" '+(calM===i+1?'selected':'')+'>'+m+'</option>').join('')+'</select>'+
+     '<input type="number" data-field="calY" min="2000" max="2100" value="'+calY+'" aria-label="Godina"></div>'+
+   '</section>'+
+   '<section class="panel balkan-month-grid bk-cal">'+
+    '<div class="bk-cal-head"><h3>'+esc(locName(calLoc))+' · '+employees.length+' zaposlenih</h3>'+
+    '<div class="bk-cal-hint">Klik na dan: <b>N → P → GO → N</b> · budući dan: <b>GO</b> · neradni dan: <b>P</b></div></div>'+
+    sickBar+
+    '<table class="calendar"><thead><tr><th class="name">Radnik</th>'+head+'<th class="total" title="Radni dani">Rad.</th></tr></thead><tbody>'+
+    (body||'<tr><td colspan="'+(n+2)+'" style="padding:24px!important;color:#738198">Nema zaposlenih za ovaj period.</td></tr>')+
+    '</tbody></table><div class="bk-cal-legend">'+legend+'</div></section>'+
+   '<section class="panel balkan-month-detail" id="dayPanel">'+(chosen?dayPanel(chosen,chosenDate,calLoc):'<h2>Detalji dana</h2><p class="muted">Klikni na dan u tabeli: status se mijenja odmah, a ovdje vidiš dolazak, odlazak i ostale izmjene.</p>')+'</section>';
+ };
+})();
+
 // Firebase bootstrap only: the legacy interface is not activated before authentication.
 window.BALKAN_V6={
  boot:async()=>{await init(); if(!S.admin)S.admin={username:'Firebase administrator'};unlocked=true;route='pregled';S._sync={url:'',token:'',deviceId:S._sync?.deviceId||uid(),seeded:true,lastAt:null};S._pending=[];render()},

@@ -48,7 +48,7 @@ try{
  assert.equal(first.value.empId,'e1');
  assert.equal(first.value.locId,'m1');
  await scan('MARKET1');
- assert.match(await page.locator('#status').innerText(),/Ponovljeno skeniranje/);
+ assert.match(await page.locator('#status').innerText(),/Ponovljen/);
  assert.equal((await written()).length,1,'Same card and kind in 60s blocked');
  await page.locator('#modeOut').click();
  await scan('MARKET1');
@@ -88,6 +88,7 @@ try{
  assert.equal(uploaded[0].value.at,firstQueuedAt,'Original offline timestamp used');
  assert.equal(uploaded[0].value.empId,'e2');
  assert.equal(uploaded[1].value.kind,'out');
+ await page.locator('#modeIn').click();
  await scan('INACTIVE');
  await page.waitForFunction(()=>JSON.parse(localStorage.getItem('balkan_kiosk_outbox_v1')||'[]').some(x=>x.flag==='review'));
  assert.equal((await items()).length,1,'Rejected card kept for review');
@@ -102,6 +103,7 @@ try{
  assert.equal((await items()).length,1,'Only invalid card remains for manual review');
  // HID-scanner simulation: focus lost after pressing a button; no click on barcode field.
  await page.locator('#modeIn').click();
+ await page.waitForFunction(()=>!document.querySelector('#queueRetry').disabled);
  await page.locator('#queueRetry').focus();
  assert.notEqual(await page.evaluate(()=>document.activeElement?.id),'barcode');
  await page.keyboard.type('MARKET2',{delay:4});
@@ -112,6 +114,7 @@ try{
  assert.equal((await written())[3].value.empId,'e2');
  // Tab is also a common barcode scanner suffix.
  await page.locator('#modeOut').click();
+ await page.waitForFunction(()=>!document.querySelector('#queueRetry').disabled);
  await page.locator('#queueRetry').focus();
  await page.keyboard.type('MARKET2',{delay:3});
  await page.keyboard.press('Tab');

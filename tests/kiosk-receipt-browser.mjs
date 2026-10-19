@@ -50,6 +50,10 @@ try{
  await page.waitForFunction(()=>!navigator.onLine);
  await page.locator('#modeOut').click();
  await scan('MARKET2');
+ // Sigurnosno pravilo: ODLAZAK bez DOLASKA na ovoj kasi traži potvrdu ponovnim skeniranjem.
+ assert.match(await page.locator('#receiptState').innerText(),/NEMA DOLASKA/);
+ assert.equal(JSON.parse(await page.evaluate(()=>localStorage.getItem('balkan_kiosk_outbox_v1')||'[]')).length,0,'Ništa upisano prije potvrde');
+ await scan('MARKET2');
  assert.ok((await page.locator('#receipt').getAttribute('class')).includes('pending'));
  assert.match(await page.locator('#receiptKind').innerText(),/ODLAZAK/);
  assert.match(await page.locator('#receiptState').innerText(),/SAČUVANO NA OVOM RAČUNARU/);
@@ -68,11 +72,12 @@ try{
  // Background sync of older queued items may not wipe the latest scan receipt.
  await context.setOffline(true);
  await page.waitForFunction(()=>!navigator.onLine);
- await page.locator('#modeIn').click();
+ await page.locator('#modeOut').click(); // Aida je već prijavljena → sada ODLAZAK
  await scan('MARKET1');
  // Kartica potvrđena ranije: ime se odmah prikazuje, ali stanje ostaje ŽUTO dok server ne potvrdi.
  await page.waitForFunction(()=>document.querySelector('#receiptPerson')?.textContent==='Aida Kovačević'&&document.querySelector('#receipt')?.classList.contains('pending'));
  assert.ok(!(await page.locator('#receiptState').innerText()).includes('POTVRĐENO'),'Poznato ime ne smije značiti serversku potvrdu');
+ await page.locator('#modeIn').click();
  await scan('MARKET2');
  const latest=await page.locator('#receiptPerson').innerText();
  await context.setOffline(false);
@@ -80,7 +85,7 @@ try{
  assert.notEqual(latest,'Aida Kovačević');
  assert.match(await page.locator('#receiptKind').innerText(),/DOLAZAK/);
  assert.equal(await page.locator('#receipt').getAttribute('class'),'receipt ok');
- await page.locator('#modeOut').click();
+ await page.locator('#modeIn').click();
  await scan('NOTFOUND');
  await page.waitForFunction(()=>document.querySelector('#receipt')?.classList.contains('bad'),{timeout:12000});
  assert.match(await page.locator('#receiptState').innerText(),/NIJE POTVRĐENO/);

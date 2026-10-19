@@ -4,7 +4,7 @@
 import {chromium} from 'playwright';
 import assert from 'node:assert/strict';
 const URL='http://127.0.0.1:8765/index.html';
-const cards={W1:'Amra Hodžić',W2:'Edin Lukač',W3:'Sanja Perović',W4:'Nikola Vuković',BAD:null};
+const cards={W1:'Amra Hodžić',W2:'Edin Lukač',W3:'Sanja Perović',W4:'Nikola Vuković',W5:'Mirela Test',BAD:null};
 const auth='const a={currentUser:null};export function getAuth(){return a}export async function signInAnonymously(){await new Promise(r=>setTimeout(r,100));a.currentUser={uid:"anon"};return{user:a.currentUser}}';
 const fs=`
 const C=${JSON.stringify(cards)};
@@ -38,7 +38,7 @@ const server=()=>page.evaluate(()=>[...globalThis.__server.values()]);
 async function scan(code,mode='in'){
  await page.click(mode==='in'?'#modeIn':'#modeOut');
  const t=Date.now();await page.keyboard.type(code,{delay:5});await page.keyboard.press('Enter');
- await page.waitForFunction(()=>document.querySelector('#receipt').classList.contains('pending')||document.querySelector('#receipt').classList.contains('ok')||document.querySelector('#receipt').classList.contains('bad'));
+ await page.waitForFunction(()=>document.querySelector('#receipt').classList.contains('pending')||document.querySelector('#receipt').classList.contains('ok')||document.querySelector('#receipt').classList.contains('bad')||document.querySelector('#receipt').classList.contains('warn'));
  return Date.now()-t;
 }
 const results=[];const ok=m=>{results.push('✓ '+m);console.log('✓ '+m)};
@@ -140,7 +140,7 @@ await page.evaluate(()=>{const q=JSON.parse(localStorage.getItem('balkan_kiosk_o
 
 // Jedan radnik "visi" na serveru; sljedeći radnik mora dobiti zelenu potvrdu odmah, ne za 20 s.
 await page.evaluate(()=>globalThis.__hangCards=['W2']);
-await scan('W2','in');
+await scan('W2','out');
 await page.waitForTimeout(300);
 const tHang=Date.now();await scan('W3','in');
 await page.waitForFunction(()=>document.querySelector('#receipt').classList.contains('ok'),{timeout:5000});
@@ -149,6 +149,27 @@ assert.ok(okMs<3000,'Sljedeći radnik potvrđen brzo i dok prethodni zapis visi:
 ok('Dok jedan zapis visi na serveru, sljedeći radnik dobija zelenu potvrdu za '+okMs+' ms');
 await page.evaluate(()=>globalThis.__hangCards=[]);
 await page.waitForFunction(()=>JSON.parse(localStorage.getItem('balkan_kiosk_outbox_v1')||'[]').filter(x=>x.flag!=='review').length===0,{timeout:70000});
+
+// SIGURNOSNO PRAVILO SMJENE
+const w5=async()=>(await server()).filter(x=>x.barcode==='W5').length;
+const state=()=>page.locator('#receiptState').innerText();
+await scan('W5','out');
+assert.match(await state(),/NEMA DOLASKA/);assert.equal(await w5(),0);
+await scan('W5','out');
+await page.waitForFunction(()=>document.querySelector('#receipt').classList.contains('ok'),{timeout:5000});
+assert.equal(await w5(),1,'ODLAZAK bez dolaska upisan tek nakon potvrde drugim skeniranjem');
+await scan('W5','out');
+assert.match(await state(),/VEĆ SI ODJAVLJEN/);
+await scan('W5','in');
+await page.waitForFunction(()=>document.querySelector('#receipt').classList.contains('ok'),{timeout:5000});
+await scan('W5','in');
+assert.match(await state(),/VEĆ SI PRIJAVLJEN OD/);
+await page.waitForTimeout(400);
+assert.equal(await w5(),2,'Dupli dolazak i dupli odlazak NISU upisani');
+await page.reload({waitUntil:'domcontentloaded'});
+await scan('W5','in');
+assert.match(await state(),/VEĆ SI PRIJAVLJEN OD/,'Pravilo važi i nakon ponovnog otvaranja programa');
+ok('Sigurnosno pravilo: dupli DOLAZAK/ODLAZAK blokiran (i nakon restarta), ODLAZAK bez dolaska traži potvrdu');
 
 // Redoslijed: dolazak prije odlaska iste kartice
 const fin=await server();const ids=new Set(fin.map(x=>x.id));assert.equal(ids.size,fin.length);

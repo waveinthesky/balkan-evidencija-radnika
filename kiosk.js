@@ -5,7 +5,8 @@ const esc=s=>String(s??'').replace(/[&<>'"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&
 const OUTBOX_KEY='balkan_kiosk_outbox_v1',RECENT_KEY='balkan_kiosk_lastscan_v1',HISTORY_KEY='balkan_kiosk_confirmed_v1',
  RECEIPT_KEY='balkan_kiosk_receipt_v1',BADGES_KEY='balkan_kiosk_badges_v1',LIMIT=1500,MODULE='./kiosk-firebase.js?v=20261019v6';
 let mode='in',busy=false,flushing=null,transport=null,lastScan=null,history=[],receiptId=null;
-let spawnWorker=null,syncRequested=false,includeReviewsNext=false,firebaseWarmup=null,retryTimer=null,idleTimer=null,lastServerOk=0;
+const HISTORY_MAX=400,SHIFT_WINDOW_MS=18*3600000,CONFIRM_MS=30000;
+let pendingConfirm=null,spawnWorker=null,syncRequested=false,includeReviewsNext=false,firebaseWarmup=null,retryTimer=null,idleTimer=null,lastServerOk=0;
 
 // ---------- lokalni red ----------
 function readQueue(){
@@ -61,7 +62,7 @@ function showReceipt(info,persist=true){
  if(persist){try{localStorage.setItem(RECEIPT_KEY,JSON.stringify(rec))}catch{}}
  clearTimeout(idleTimer);
  // Završen rezultat (zeleno/crveno) ostaje 25 s, pa se ekran vraća na "Spremno".
- if(rec.variant==='ok'||rec.variant==='bad')idleTimer=setTimeout(()=>{if(receiptId===rec.id)showIdle()},25000);
+ if(rec.variant==='ok'||rec.variant==='bad'||rec.variant==='warn')idleTimer=setTimeout(()=>{if(receiptId===rec.id)showIdle()},rec.variant==='warn'?CONFIRM_MS:25000);
 }
 function showIdle(){
  showReceipt({variant:'idle',icon:'⌁',heading:'Spremno za skeniranje',name:'Prinesi karticu',kind:mode,
@@ -82,9 +83,9 @@ function restoreReceipt(){
 }
 function loadHistory(){
  try{const data=JSON.parse(localStorage.getItem(HISTORY_KEY)||'[]');
-  history=Array.isArray(data)?data.filter(x=>x&&typeof x.name==='string'&&typeof x.at==='string').slice(0,30):[]}catch{history=[]}
+  history=Array.isArray(data)?data.filter(x=>x&&typeof x.name==='string'&&typeof x.at==='string').slice(0,HISTORY_MAX):[]}catch{history=[]}
 }
-function saveHistory(){try{localStorage.setItem(HISTORY_KEY,JSON.stringify(history.slice(0,30)))}catch{}}
+function saveHistory(){try{localStorage.setItem(HISTORY_KEY,JSON.stringify(history.slice(0,HISTORY_MAX)))}catch{}}
 function connection(){
  const el=$('connection');
  let text,cls;
@@ -177,6 +178,21 @@ function duplicate(code,kind,now,items){
  if(items.findLast(x=>x.barcode===code&&x.kind===kind&&now-new Date(x.at).getTime()<60000&&now>=new Date(x.at).getTime()))return true;
  return lastScan?.code===code&&lastScan?.kind===kind&&now-lastScan.at<60000;
 }
+// SIGURNOSNO PRAVILO SMJENE (na osnovu skeniranja na ovom računaru u zadnjih 18 h):
+//  • isti radnik ne može dva puta zaredom DOLAZAK, niti dva puta zaredom ODLAZAK;
+//  • ODLAZAK bez prethodnog DOLASKA traži potvrdu ponovnim skeniranjem u roku od 30 s.
+function lastLocalScan(code,now,items){
+ const all=[...items.filter(x=>x.flag!=='review'),...history.filter(x=>x.barcode)];
+ let last=null;
+ for(const x of all){
+  if(x.barcode!==code)continue;
+  const t=Date.parse(x.at);
+  if(!(t<=now)||now-t>SHIFT_WINDOW_MS)continue;
+  if(!last||t>Date.parse(last.at))last=x;
+ }
+ return last;
+}
+function clock(at){const d=new Date(at);return p2(d.getHours())+':'+p2(d.getMinutes())}
 function prepareRecent(){
  try{const item=JSON.parse(localStorage.getItem(RECENT_KEY)||'null');if(item&&typeof item.code==='string'&&Number.isFinite(item.at))lastScan=item}catch{}
 }
@@ -254,8 +270,8 @@ function syncQueue(includeReview=false){
       const confirmed=await boundedUpload(sender,current);
       saveQueue(readQueue().filter(x=>x.id!==current.id));
       history=history.filter(x=>x.id!==current.id);
-      history.unshift({id:current.id,name:confirmed.name,kind:confirmed.kind,at:confirmed.at,locationId:confirmed.locationId});
-      history=history.slice(0,30);saveHistory();
+      history.unshift({id:current.id,barcode:current.barcode,name:confirmed.name,kind:confirmed.kind,at:confirmed.at,locationId:confirmed.locationId});
+      history=history.slice(0,HISTORY_MAX);saveHistory();
       lastServerOk=Date.now();
       if(receiptId===current.id)showReceipt({
        id:current.id,variant:'ok',icon:'✓',heading:'Uspješno evidentirano',name:confirmed.name,
@@ -355,6 +371,29 @@ $('scanForm').addEventListener('submit',e=>{
  try{
   const items=readQueue();
   if(items.length>=LIMIT)throw Error('Lokalna evidencija je puna. Zatraži pomoć administratora.');
+  const last=lastLocalScan(code,now,items);
+  if(last&&last.kind===selectedMode){
+   const name=cardLabel(code);
+   showReceipt({variant:'warn',icon:'i',heading:'Već evidentirano – novi zapis nije potreban',name,kind:selectedMode,at:last.at,
+    state:selectedMode==='in'?'VEĆ SI PRIJAVLJEN OD '+clock(last.at):'VEĆ SI ODJAVLJEN U '+clock(last.at),
+    hint:selectedMode==='in'?'Tvoj DOLAZAK u '+clock(last.at)+' je već sačuvan. Za kraj smjene izaberi ODLAZAK pa skeniraj karticu.':
+     'Tvoj ODLAZAK u '+clock(last.at)+' je već sačuvan. Ako dolaziš na posao, izaberi DOLAZAK pa skeniraj karticu.',
+    message:'Ponovljena radnja nije upisana, da obračun sati ostane tačan. Ako je ovo greška, javi administratoru.'});
+   pendingConfirm=null;
+   return;
+  }
+  if(selectedMode==='out'&&!last){
+   const confirmed=pendingConfirm&&pendingConfirm.code===code&&now-pendingConfirm.at<CONFIRM_MS;
+   if(!confirmed){
+    pendingConfirm={code,at:now};
+    showReceipt({variant:'warn',icon:'?',heading:'Potrebna potvrda',name:cardLabel(code),kind:'out',at:new Date(now).toISOString(),
+     state:'NEMA DOLASKA NA OVOJ KASI',
+     hint:'Na ovoj kasi nema tvog DOLASKA u zadnjih 18 sati. Ako zaista odlaziš, skeniraj karticu JOŠ JEDNOM u roku od 30 sekundi. Ako dolaziš, izaberi DOLAZAK.',
+     message:'Ništa još nije upisano.'});
+    return;
+   }
+  }
+  pendingConfirm=null;
   if(duplicate(code,selectedMode,now,items)){
    showReceipt({variant:'bad',icon:'!',heading:'Ponovljeno skeniranje',name:cardLabel(code),
     kind:selectedMode,at:new Date(now).toISOString(),state:'NIJE DODAT NOVI ZAPIS',

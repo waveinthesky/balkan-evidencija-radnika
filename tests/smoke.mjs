@@ -45,7 +45,10 @@ assert.ok(await page.locator('table.calendar button.cell.P[data-day="'+date+'"][
 const statusN=page.locator('table.calendar button.cell.P[data-day="'+date+'"][data-emp="'+emp+'"]');
 await statusN.click();
 await page.waitForTimeout(200);
-assert.ok(await page.locator('table.calendar button.cell.N[data-day="'+date+'"][data-emp="'+emp+'"]').count(),'N on second click');
+assert.ok(await page.locator('table.calendar button.cell.GO[data-day="'+date+'"][data-emp="'+emp+'"]').count(),'GO on second click');
+await page.locator('table.calendar button.cell.GO[data-day="'+date+'"][data-emp="'+emp+'"]').click();
+await page.waitForTimeout(200);
+assert.ok(await page.locator('table.calendar button.cell.N[data-day="'+date+'"][data-emp="'+emp+'"]').count(),'N on third click (N → P → GO → N)');
 const top=await page.evaluate(()=>document.querySelector('.balkan-month-grid').getBoundingClientRect().top);
 const details=await page.locator('#dayPanel').count();
 assert.ok(details===1,'Day detail below calendar exists');
@@ -72,6 +75,6 @@ assert.equal(await page.evaluate(()=>window.__AUDIT_ERROR||''),'','Admin reload'
 await page.getByRole('button',{name:/Radnici/}).first().click();
 assert.ok(await page.getByText('Testni Radnik Za Audit').count(),'Worker remains after reload');
 assert.equal(errors.length,0,'JavaScript errors: '+errors.join(' | '));
-console.log('PASS '+(mobile?'MOBILE':'DESKTOP')+' browser test: forms, save, calendar full month, P↔N click, detail, holiday range, reports, reload');
+console.log('PASS '+(mobile?'MOBILE':'DESKTOP')+' browser test: forms, save, calendar full month, N→P→GO→N click, detail, holiday range, reports, reload');
 console.log('Layout:',JSON.stringify(layout));
 await browser.close();
