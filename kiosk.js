@@ -27,9 +27,24 @@ function setSyncMessage(message,tone=''){
  $('syncStatus').style.color=tone==='bad'?'#a12837':tone==='ok'?'#08613e':'#586981';
 }
 function cardLabel(code){
- // Dok server ne potvrdi karticu ne tvrdimo da znamo ime radnika.
+ // Ime prikazujemo samo ako je ovu karticu Firebase server ranije potvrdio
+ // na ovom računaru; inače samo kraj barkoda.
+ const known=knownName(code);if(known)return known;
  const value=String(code||''),tail=value.slice(-4);
  return 'Kartica '+(tail?'••••'+tail:'bez koda');
+}
+function knownName(code){
+ try{const b=JSON.parse(localStorage.getItem('balkan_kiosk_badges_v1')||'{}')[code];return b&&b.name?String(b.name):''}catch{return ''}
+}
+let retryTimer=null;
+function backoffMs(attempts){return Math.min(60000,2000*Math.pow(2,Math.max(0,attempts-1)))}
+function scheduleRetry(){
+ clearTimeout(retryTimer);retryTimer=null;
+ let items;try{items=readQueue()}catch{return}
+ const next=items.filter(x=>x.flag!=='review').map(x=>Number(x.nextTryAt)||0);
+ if(!next.length||!navigator.onLine)return;
+ const wait=Math.max(500,Math.min(...next)-Date.now());
+ retryTimer=setTimeout(()=>{retryTimer=null;if(navigator.onLine)void syncQueue()},wait);
 }
 function showReceipt(info,persist=true){
  const rec={id:info.id||null,variant:info.variant||'idle',heading:info.heading||'Spremno',
@@ -187,7 +202,7 @@ function boundedUpload(sender,item){
    if(error)reject(error);else resolve(value);
   };
   const onOffline=()=>done(new Error('Internet je nestao tokom slanja; zapis ostaje lokalno.'));
-  const timeout=setTimeout(()=>done(new Error('Server nije potvrdio upis na vrijeme; zapis ostaje lokalno.')),12000);
+  const timeout=setTimeout(()=>done(Object.assign(new Error('Server sporo odgovara; zapis je sačuvan na računaru i šalje se ponovo.'),{code:'slow-server'})),20000);
   window.addEventListener('offline',onOffline,{once:true});
   Promise.resolve().then(()=>sender.sendQueuedScan(item)).then(value=>done(null,value),error=>done(error));
  });
@@ -200,13 +215,13 @@ function describe(err){
 function warmFirebase(){
  if(!navigator.onLine)return Promise.resolve(null);
  if(!firebaseWarmup){
-  firebaseWarmup=import('./kiosk-firebase.js')
+  firebaseWarmup=import('./kiosk-firebase.js?v=20261019fifo5')
    .then(async sender=>{transport=sender;await sender.warmFirebase();return sender})
    .catch(err=>{firebaseWarmup=null;throw err});
  }
  return firebaseWarmup;
 }
-function syncQueue(includeReview=false){
+function syncQueue(includeReview=false,manual=includeReview){
  if(flushing){syncRequested=true;if(includeReview)includeReviewsNext=true;return flushing}
  if(!navigator.onLine){statusConnection();return Promise.resolve()}
  flushing=(async()=>{
@@ -215,25 +230,27 @@ function syncQueue(includeReview=false){
   $('queueRetry').disabled=true;
   try{
    if(!readQueue().length){setSyncMessage('Nema zapisa na čekanju.','ok');return}
-   const sender=transport||await import('./kiosk-firebase.js');transport=sender;
+   const sender=transport||await import('./kiosk-firebase.js?v=20261019fifo5');transport=sender;
    const handled=new Set(),activeBadges=new Set();
    // Bounded worker pool: različite kartice mogu putovati istovremeno,
    // ali događaji iste kartice ostaju u redoslijedu skeniranja.
    async function worker(){
     while(navigator.onLine){
-     const choices=readQueue().filter(x=>!handled.has(x.id)&&!activeBadges.has(x.barcode)&&
-      (includeReview||x.flag!=='review'));
-     if(!choices.length)return;
-     const groups=new Map();
-     for(const x of choices){
-      const group=groups.get(x.barcode)||[];group.push(x);groups.set(x.barcode,group);
+     // NAJSTARIJI zapis ide prvi (FIFO). Zapis iste kartice čeka da prethodni
+     // zapis te kartice završi, da dolazak/odlazak ostanu po redu.
+     const all=readQueue(),blockedBadges=new Set(activeBadges),now=Date.now();
+     const order=x=>Number(x.addedAt)||Date.parse(x.at)||0;
+     all.sort((a,b)=>order(a)-order(b));
+     let current=null;
+     for(const x of all){
+      if(blockedBadges.has(x.barcode))continue;
+      blockedBadges.add(x.barcode); // samo prvi neposlati zapis svake kartice smije ići
+      if(handled.has(x.id))continue;
+      if(!includeReview&&x.flag==='review')continue;
+      if(!manual&&x.nextTryAt&&Number(x.nextTryAt)>now)continue;
+      current=x;break;
      }
-     const ordered=[...groups.values()].sort((a,b)=>{
-      const endA=Math.max(...a.map(x=>Number(x.addedAt)||Date.parse(x.at)||0));
-      const endB=Math.max(...b.map(x=>Number(x.addedAt)||Date.parse(x.at)||0));
-      return endB-endA;
-     });
-     const current=ordered[0].sort((a,b)=>(Number(a.addedAt)||Date.parse(a.at))-(Number(b.addedAt)||Date.parse(b.at)))[0];
+     if(!current)return;
      handled.add(current.id);activeBadges.add(current.barcode);attempted++;
      try{
       const confirmed=await boundedUpload(sender,current);
@@ -257,6 +274,7 @@ function syncQueue(includeReview=false){
        record.error=reason;
        record.lastTriedAt=Date.now();
        record.attempts=(Number(record.attempts)||0)+1;
+       record.nextTryAt=Date.now()+backoffMs(record.attempts);
        if(manualReview(err))record.flag='review';
        saveQueue(items);
       }
@@ -292,7 +310,7 @@ function syncQueue(includeReview=false){
   else if(sent)setSyncMessage('Firebase potvrdio '+sent+' '+(sent===1?'zapis':'zapisa')+'.','ok');
   else setSyncMessage('Nema zapisa na čekanju.','ok');
  })().finally(()=>{
-  flushing=null;showQueue();focus();
+  flushing=null;showQueue();focus();scheduleRetry();
   const again=syncRequested;
   const reviews=includeReviewsNext;
   syncRequested=false;includeReviewsNext=false;

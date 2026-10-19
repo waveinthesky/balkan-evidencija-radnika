@@ -70,11 +70,13 @@ try{
  await page.waitForFunction(()=>!navigator.onLine);
  await page.locator('#modeIn').click();
  await scan('MARKET1');
- await page.waitForFunction(()=>document.querySelector('#receiptPerson')?.textContent.includes('Kartica'));
+ // Kartica potvrđena ranije: ime se odmah prikazuje, ali stanje ostaje ŽUTO dok server ne potvrdi.
+ await page.waitForFunction(()=>document.querySelector('#receiptPerson')?.textContent==='Aida Kovačević'&&document.querySelector('#receipt')?.classList.contains('pending'));
+ assert.ok(!(await page.locator('#receiptState').innerText()).includes('POTVRĐENO'),'Poznato ime ne smije značiti serversku potvrdu');
  await scan('MARKET2');
  const latest=await page.locator('#receiptPerson').innerText();
  await context.setOffline(false);
- await page.waitForFunction(()=>document.querySelector('#receiptPerson')?.textContent==='Mirsad Bećirović',{timeout:12000});
+ await page.waitForFunction(()=>document.querySelector('#receiptPerson')?.textContent==='Mirsad Bećirović'&&document.querySelector('#receipt')?.classList.contains('ok'),{timeout:12000});
  assert.notEqual(latest,'Aida Kovačević');
  assert.match(await page.locator('#receiptKind').innerText(),/DOLAZAK/);
  assert.equal(await page.locator('#receipt').getAttribute('class'),'receipt ok');
