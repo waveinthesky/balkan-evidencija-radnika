@@ -177,9 +177,10 @@ function startLive(){
  liveStyles();
  if(!document.getElementById('balkanLive')){
   const box=document.createElement('div');box.id='balkanLive';
-  box.innerHTML='<div id="balkanLivePanel" aria-live="polite"><header><b>Skeniranja danas</b><small>Uživo iz Firebase baze, sa svih kasa.</small></header><div class="bl-list"></div></div><button id="balkanLiveBtn" type="button">Skeniranja danas<span class="n">0</span></button>';
+  box.innerHTML='<div id="balkanLivePanel" aria-live="polite"><header><b>Skeniranja danas</b><small>Uživo iz Firebase baze, sa svih kasa.</small><button type="button" id="balkanLiveDel" style="margin-top:8px;border:1.5px solid #e7a3ad;background:#fff;color:#a61f33;border-radius:8px;padding:6px 10px;font-weight:700;cursor:pointer">🗑 Brisanje skeniranja</button></header><div class="bl-list"></div></div><button id="balkanLiveBtn" type="button">Skeniranja danas<span class="n">0</span></button>';
   document.body.appendChild(box);
   box.querySelector('#balkanLiveBtn').addEventListener('click',()=>box.classList.toggle('open'));
+  box.querySelector('#balkanLiveDel').addEventListener('click',()=>{box.classList.remove('open');window.balkanOpenScanDelete?.({})});
  }
  const d=new Date(),start=new Date(d.getFullYear(),d.getMonth(),d.getDate()).toISOString();
  try{

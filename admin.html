@@ -327,6 +327,8 @@ save=async function(){
    for(const op of changes){
      // Stvarna skeniranja već su pojedinačno evidentirana. Za ručne izmjene čuvamo prije/poslije.
      if(op.collection==='audit'||(op.collection==='events'&&op.type==='set'&&op.value?.source==='barcode'))continue;
+     // Brisanja kroz "Brisanje skeniranja" već imaju potpunu kopiju u korpi (scanTrash) i jedan sažeti zapis.
+     if(op.collection==='scanTrash'||(op.type==='delete'&&(op.collection==='events'||op.collection==='overrides')&&(S.scanTrash||[]).some(b=>!b.restoredAt&&((b.events||[]).some(v=>v.id===op.key)||(b.overrides||[]).some(o=>o.id===op.key)))))continue;
      const before=(persistedBaseline[op.collection]||[]).find(v=>v.id===op.key)||null;
      const after=op.type==='delete'?null:op.value;
      const describe=(v)=>v==null?'(nema)':JSON.stringify(v).slice(0,650);
@@ -1080,19 +1082,25 @@ function tardiness(employee,date,locId){
  return Math.max(0,minutes(clock(z.starts[0].at))-minutes(scheduled)-Number(sc.grace||0));
 }
 function reportFigures(employee,locId,dates){
- let actual=0,paid=0,late=0,lateDays=0,holidays=0,unclosed=0,unconfigured=0;
+ let actual=0,paid=0,late=0,lateDays=0,holidays=0,unclosed=0,unconfigured=0,normDefault=0,holidayWork=0,holidayWorkDays=0;
  for(const date of dates){
   if(!employeeAt(employee,date)||assigned(employee,date)!==locId)continue;
   const z=eventsDay(employee.id,locId,date),sc=getSchedule(locId,date),status=dayStatus(employee,date,locId);
   actual+=z.worked;if(z.open)unclosed++;
   const d=tardiness(employee,date,locId);if(d!=null&&d>0){late+=d;lateDays++}
-  if((status==='H'||status==='VH')&&holiday(locId,date,employee)?.paid===true&&!z.starts.length&&isWorking(locId,date)&&sc){
+  const hol=holiday(locId,date,employee);
+  if((status==='H'||status==='VH')&&hol?.paid===true&&!z.starts.length&&isWorking(locId,date)&&sc){
+   // Naknada zarade za praznik "kao da je na radu" (čl. 102 Zakona o radu). Ako norma nije unesena,
+   // koristi se zakonsko puno radno vrijeme: 40 h sedmično / broj radnih dana objekta (čl. 61).
    holidays++;
-   const hours=Number(employee.paidHours||sc.paidHours||0);
-   if(hours>0)paid+=Math.round(hours*60);else unconfigured++;
+   let hours=Number(employee.paidHours||sc.paidHours||0);
+   if(!(hours>0)){hours=40/Math.max(1,(sc.days||[1,2,3,4,5]).length);normDefault++}
+   paid+=Math.round(hours*60);
   }
+  // Rad na dan praznika: stvarni sati se računaju normalno, a zarada se uvećava (čl. 89 st. 2, čl. 98).
+  if(hol?.paid===true&&isWorking(locId,date)&&z.starts.length){holidayWork+=z.worked;holidayWorkDays++}
  }
- return{actual,paid,total:actual+paid,late,lateDays,holidays,unclosed,unconfigured}
+ return{actual,paid,total:actual+paid,late,lateDays,holidays,unclosed,unconfigured,normDefault,holidayWork,holidayWorkDays}
 }
 const _baseReport=reports;
 reports=function(){
@@ -1100,7 +1108,7 @@ reports=function(){
  const employees=monthEmployees(calLoc,calY,calM);
  const rows=employees.map(e=>{
   const r=reportFigures(e,calLoc,dates);
-  return '<tr><td>'+esc(e.name)+'</td><td>'+humanMinutes(r.actual)+'</td><td>'+humanMinutes(r.paid)+'</td><td><b>'+humanMinutes(r.total)+'</b></td><td>'+r.lateDays+' / '+r.late+' min</td><td>'+r.unclosed+(r.unconfigured?' / nenormirano: '+r.unconfigured:'')+'</td></tr>';
+  return '<tr><td>'+esc(e.name)+'</td><td>'+humanMinutes(r.actual)+'</td><td>'+humanMinutes(r.paid)+'</td><td><b>'+humanMinutes(r.total)+'</b></td><td>'+r.lateDays+' / '+r.late+' min</td><td>'+r.unclosed+(r.unconfigured?' / nenormirano: '+r.unconfigured:'')+(r.normDefault?' <small>(praznik po normi 40 h/sedm.: '+r.normDefault+')</small>':'')+'</td><td>'+(r.holidayWorkDays?'<b>'+r.holidayWorkDays+' d · '+humanMinutes(r.holidayWork)+'</b>':'—')+'</td></tr>';
  }).join('');
  const weeks=new Map();
  for(const date of dates){
@@ -1114,8 +1122,8 @@ reports=function(){
   return '<tr><td>'+esc(ds[0].slice(8)+'–'+ds.at(-1).slice(8)+'.'+pad(calM))+'</td><td>'+esc(e.name)+'</td><td>'+humanMinutes(r.actual)+'</td><td>'+humanMinutes(r.paid)+'</td><td>'+humanMinutes(r.total)+'</td><td>'+r.late+' min</td></tr>';
  })).join('');
  return base+'<section class="panel"><h2>Radni sati, praznici i kašnjenja · '+MONTHS[calM-1]+' '+calY+'</h2>'+
- '<p class="smalltext">Stvarni sati su potvrđeni dolasci/odlasci. Plaćeni praznici su odvojeni i računaju se po unesenoj normi sati za jedan radni dan (Objekti).</p>'+
- '<div class="tablewrap"><table class="simpletable balkan-hrs-table"><thead><tr><th>Radnik</th><th>Stvarno odrađeno</th><th>Plaćeni praznici</th><th>Ukupno obračunski</th><th>Kašnjenja / minuta</th><th>Bez odjave / bez norme</th></tr></thead><tbody>'+
+ '<p class="smalltext">Stvarni sati su potvrđeni dolasci/odlasci. <b>Plaćeni praznici</b> (državni i vjerski za radnike koji ih slave) plaćaju se kao da je radnik radio, ali nisu odrađeni sati: računaju se po normi za jedan radni dan iz Objekti, a ako norma nije unesena po zakonskih 40 h sedmično. Ko radi na dan praznika ima pravo na uvećanu zaradu (čl. 89 i 98 Zakona o radu): te sate vidiš u posljednjoj koloni.</p>'+
+ '<div class="tablewrap"><table class="simpletable balkan-hrs-table"><thead><tr><th>Radnik</th><th>Stvarno odrađeno</th><th>Plaćeni praznici</th><th>Ukupno obračunski</th><th>Kašnjenja / minuta</th><th>Bez odjave / bez norme</th><th>Rad na dan praznika (uvećanje)</th></tr></thead><tbody>'+
  (rows||'<tr><td colspan="6">Nema radnika.</td></tr>')+'</tbody></table></div>'+
  '<p class="smalltext">Kašnjenje računamo samo kad postoji početak smjene za tog radnika; samo radno vrijeme marketa nije dokaz kašnjenja.</p></section>'+
  '<section class="panel"><h2>Sedmični pregled sati</h2><div class="tablewrap"><table class="simpletable balkan-hrs-table"><thead><tr><th>Period u mjesecu</th><th>Radnik</th><th>Odrađeno</th><th>Pl. praznici</th><th>Obračunski</th><th>Kašnjenje</th></tr></thead><tbody>'+
@@ -1254,7 +1262,7 @@ overview=function(){
   return '<tr><td>'+esc(r.e.name)+'</td><td>'+msg.map(esc).join('; ')+'</td><td><button class="btn small" data-day="'+date+'" data-emp="'+esc(r.e.id)+'" data-loc="'+esc(adminLoc)+'">Detalji</button></td></tr>';
  }).join('');
  const allRows=rows.map(r=>{
-  const leave=r.leave,available=leave.quota==null?'Pravo nije uneseno · GO: '+leave.used+' dana':'Fond '+leave.quota+' · korišteno '+leave.used+' · slobodno do danas '+leave.remaining+(leave.provisional?' *':'')+' dana';
+  const leave=r.leave,available=leave.quota==null?'Pravo nije uneseno · GO: '+leave.used+' dana':'Fond '+leave.quota+' · korišteno '+leave.used+' · preostalo '+leave.annualRemaining+(leave.provisional?' *':'')+' dana';
   const first=r.scan.starts[0];
   const shift=shiftInfo(r.e,date,adminLoc);
   return '<tr><td><b>'+esc(r.e.name)+'</b></td><td>'+esc(shift.label)+'<br><small>'+esc(shift.start||'Nije određeno')+'</small></td><td>'+esc(first?clock(first.at):'—')+'</td><td>'+r.todayData.late+' min</td><td>'+r.week.late+' min</td><td>'+r.month.late+' min</td><td>'+r.month.needsCheck+'</td><td>'+r.month.absent+'</td><td>'+available+'</td></tr>';
@@ -1788,7 +1796,9 @@ settings=function(){
 };
 
 
-function agreedAnnualAutoOn(employee){return employee?.autoMissingLeave!==false}
+// 19.10.2026: dan bez prijave ostaje N (nije radio) i NE troši godišnji odmor.
+// Pojedinačne dane administrator može svjesno potvrditi kao GO (Provjera neoznačenih dana ili klik u kalendaru).
+function agreedAnnualAutoOn(employee){return false}
 function annualObservedMonth(employee,date){
  const m=date.slice(0,7);
  return (S.overrides||[]).some(o=>o.empId===employee.id&&o.date?.slice(0,7)===m&&['P','N','GO'].includes(o.status))||
@@ -1908,8 +1918,8 @@ document.getElementById('app').addEventListener('click',async event=>{
 },true);
 const _annualPriorGuide=settings;
 settings=function(){return _annualPriorGuide()
- .replace('N nije automatski godišnji.','N za protekli radni dan u popunjenom mjesecu računa se kao dogovoreni GO (od 2026) kada je opcija za radnika uključena. Izvorni podaci se ne brišu.')
- .replace('Program ne treba da automatski proglasi dan bez prijave neopravdanim izostankom ili godišnjim odmorom.','Automatski GO primjenjuje se samo na popunjene mjesece i dogovorenu opciju radnika. Pravne odluke i rješenja i dalje treba sačuvati.');
+ .replace('N nije automatski godišnji.','N (nije radio) ostaje N i ne troši godišnji odmor. Dan se računa kao godišnji samo kada ga administrator označi kao GO ili izda rješenje.')
+ .replace('Program ne treba da automatski proglasi dan bez prijave neopravdanim izostankom ili godišnjim odmorom.','Program ne proglašava automatski dan bez prijave godišnjim odmorom: takav dan ostaje N.');
 };
 
 
@@ -2088,10 +2098,11 @@ document.getElementById('app').addEventListener('click',async event=>{
 .bk-cal .calendar tbody tr:hover td{background:#f8fbff!important}
 .bk-cal .calendar tbody tr:hover td.today{background:#e1ecfa!important}
 .bk-cal .calendar td.name{padding:6px 8px!important;line-height:1.2}
-.bk-cal .calendar td.name b{display:block;font-size:13px;color:#16243a;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.bk-cal .calendar td.name b{display:block;font-size:13px;font-weight:500;color:#34445c;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.bk-cal .calendar th.name{font-weight:600;color:#5d6b80}
 .bk-cal .calendar td.name small{display:block;font-size:11px;color:#738198;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .bk-cal .calendar td.name small i{font-style:normal;font-weight:700}
-.bk-cal .calendar td.name small .sP{color:#0b7a52}.bk-cal .calendar td.name small .sGO{color:#1f5fb8}.bk-cal .calendar td.name small .sN{color:#b42a40}
+.bk-cal .calendar td.name small .sP{color:#0b7a52}.bk-cal .calendar td.name small .sGO{color:#1f5fb8}.bk-cal .calendar td.name small .sN{color:#b42a40}.bk-cal .calendar td.name small .sH{color:#13664f}
 .bk-cal .calendar td.total{font-size:14px!important;font-weight:800;color:#0b6b45}
 .bk-cal .calendar button.cell{height:30px!important;max-width:34px!important;border-radius:7px!important;font-size:11px!important;font-weight:800;border:0;cursor:pointer;transition:transform .08s}
 .bk-cal .calendar button.cell:hover{transform:scale(1.08);outline:2px solid #4b7fd1;outline-offset:1px}
@@ -2111,7 +2122,7 @@ document.getElementById('app').addEventListener('click',async event=>{
 .bk-cal-legend span{display:inline-flex;align-items:center;gap:6px}
 .bk-cal-legend .cell{display:inline-grid!important;place-items:center;width:26px!important;height:20px!important;border-radius:5px!important;font-size:10px!important;font-weight:800;margin:0!important}
 .bk-cal-legend .mk{width:26px;height:20px;border-radius:5px;background:#e7ecf3;box-shadow:inset 0 -3px 0 #00000026}
-#bkCalToast{position:fixed;left:50%;bottom:22px;transform:translateX(-50%) translateY(10px);opacity:0;z-index:9500;background:#14263d;color:#fff;border-radius:12px;padding:10px 12px 10px 16px;display:flex;align-items:center;gap:14px;box-shadow:0 10px 30px #14263d55;font:600 14px/1.3 "Segoe UI",system-ui,Arial,sans-serif;transition:.2s;pointer-events:none;max-width:92vw}
+#bkCalToast{position:fixed;left:50%;bottom:22px;transform:translateX(-50%) translateY(10px);opacity:0;z-index:2147483000;background:#14263d;color:#fff;border-radius:12px;padding:10px 12px 10px 16px;display:flex;align-items:center;gap:14px;box-shadow:0 10px 30px #14263d55;font:600 14px/1.3 "Segoe UI",system-ui,Arial,sans-serif;transition:.2s;pointer-events:none;max-width:92vw}
 #bkCalToast.show{opacity:1;transform:translateX(-50%);pointer-events:auto}
 #bkCalToast button{border:0;border-radius:8px;background:#fff;color:#14263d;font-weight:800;padding:7px 12px;cursor:pointer}
 #bkCalToast.err{background:#a61f33}
@@ -2153,11 +2164,12 @@ document.getElementById('app').addEventListener('click',async event=>{
   return next===auto?null:next;                                    // null = vrati automatski status
  }
 
- let saving=Promise.resolve(),toastTimer=null,undo=null;
- function bkToast(text,{error=false,canUndo=false}={}){
+ let saving=Promise.resolve(),toastTimer=null,undo=null,undoFn=null;
+ function bkToast(text,{error=false,canUndo=false,onUndo=null}={}){
+  undoFn=onUndo||applyUndo;
   let t=document.getElementById('bkCalToast');
   if(!t){t=document.createElement('div');t.id='bkCalToast';t.setAttribute('role','status');document.body.appendChild(t);
-   t.addEventListener('click',e=>{if(e.target.closest('[data-bk-undo]'))applyUndo()})}
+   t.addEventListener('click',e=>{if(e.target.closest('[data-bk-undo]')){t.classList.remove('show');(undoFn||applyUndo)()}})}
   t.className=error?'err':'';
   t.innerHTML='<span>'+esc(text)+'</span>'+(canUndo?'<button type="button" data-bk-undo="1">Poništi</button>':'');
   void t.offsetWidth;t.classList.add('show');
@@ -2218,6 +2230,7 @@ document.getElementById('app').addEventListener('click',async event=>{
   else openFromElsewhere(t);
  },true);
 
+ window.bkToast=bkToast;
  const _calendarBeforeV2=calendar; // čuva se samo kao rezerva
  calendar=function(){
   const allEmployees=monthEmployees(calLoc,calY,calM);
@@ -2236,7 +2249,7 @@ document.getElementById('app').addEventListener('click',async event=>{
     return '<td class="'+classes[i]+'"><button type="button" class="cell '+status+man+sel+'" title="'+esc(e.name)+' · '+esc(niceDate(d))+' · '+esc(statusText(status))+(man?' (ručno)':'')+'" data-day="'+d+'" data-emp="'+esc(e.id)+'" data-loc="'+esc(calLoc)+'">'+esc(LEGEND[status]?.[0]||'–')+'</button></td>';
    }).join('');
    const m=monthMetrics(e,calLoc,calY,calM);
-   const stats='<i class="sP">P '+m.P+'</i>'+(m.GO?' · <i class="sGO">GO '+m.GO+'</i>':'')+(m.N?' · <i class="sN">N '+m.N+'</i>':'')+(m.BO?' · BO '+m.BO:'');
+   const stats='<i class="sP">P '+m.P+'</i>'+(m.GO?' · <i class="sGO">GO '+m.GO+'</i>':'')+(m.N?' · <i class="sN">N '+m.N+'</i>':'')+(m.BO?' · BO '+m.BO:'')+((m.H||0)+(m.VH||0)?' · <i class="sH">PR '+((m.H||0)+(m.VH||0))+'</i>':'');
    return '<tr><td class="name" title="'+esc(e.name)+'"><b>'+esc(e.name)+'</b><small>'+stats+'</small></td>'+cells+'<td class="total" title="Radni dani (P + za provjeru)">'+(m.P+m.RP)+'</td></tr>';
   }).join('');
   const chosen=S.employees.find(e=>e.id===chosenEmp);
@@ -2246,7 +2259,7 @@ document.getElementById('app').addEventListener('click',async event=>{
   const sickBar='<div class="bk-cal-sick"><span>'+(sick.length?'<b>Radnici na bolovanju:</b> '+sick.map(e=>esc(e.name)+' (od '+esc(sickLeaveAt(e,target).from)+')').join(', ')+(showSickOnCalendar?'':' · skriveni iz tabele'):'<b>Radnici na bolovanju:</b> nema u ovom periodu.')+'</span>'+
    '<button class="btn small" type="button" data-toggle-sick-calendar="1">'+(showSickOnCalendar?'Sakrij bolovanja u kalendaru':'Prikaži bolovanja u kalendaru')+'</button></div>';
   return pageTitle('Mjesečni kalendar','Jedan klik na dan mijenja status; detalji dana su ispod tabele.',
-   '<button class="btn" data-act="exportcsv">↓ Excel (CSV)</button><button class="btn" data-act="print">⎙ Štampaj / PDF</button><button class="btn primary" data-act="manual">+ Ručna evidencija</button>')+
+   '<button class="btn bk-danger" type="button" data-bkd-open="1">🗑 Brisanje skeniranja</button><button class="btn" data-act="exportcsv">↓ Excel (CSV)</button><button class="btn" data-act="print">⎙ Štampaj / PDF</button><button class="btn primary" data-act="manual">+ Ručna evidencija</button>')+
    '<section class="panel bk-cal-bar">'+
     '<div class="bk-cal-nav"><button class="bk-cal-arrow" type="button" data-act="prevmonth" aria-label="Prethodni mjesec">‹</button><h2>'+MONTHS[calM-1]+' '+calY+'.</h2><button class="bk-cal-arrow" type="button" data-act="nextmonth" aria-label="Sljedeći mjesec">›</button></div>'+
     '<button class="bk-cal-today" type="button" data-bk-today="1">Danas</button>'+
@@ -2262,7 +2275,746 @@ document.getElementById('app').addEventListener('click',async event=>{
     '<table class="calendar"><thead><tr><th class="name">Radnik</th>'+head+'<th class="total" title="Radni dani">Rad.</th></tr></thead><tbody>'+
     (body||'<tr><td colspan="'+(n+2)+'" style="padding:24px!important;color:#738198">Nema zaposlenih za ovaj period.</td></tr>')+
     '</tbody></table><div class="bk-cal-legend">'+legend+'</div></section>'+
-   '<section class="panel balkan-month-detail" id="dayPanel">'+(chosen?dayPanel(chosen,chosenDate,calLoc):'<h2>Detalji dana</h2><p class="muted">Klikni na dan u tabeli: status se mijenja odmah, a ovdje vidiš dolazak, odlazak i ostale izmjene.</p>')+'</section>';
+   '<section class="panel balkan-month-detail" id="dayPanel">'+(chosen?dayPanel(chosen,chosenDate,calLoc)+
+    '<div class="bk-cal-detail-del"><button class="btn bk-danger" type="button" data-bkd-open="1" data-emp="'+esc(chosen.id)+'" data-date="'+esc(chosenDate)+'" data-loc="'+esc(calLoc)+'">🗑 Obriši skeniranja ovog dana…</button> <button class="btn" type="button" data-bkd-open="1" data-tab="history">Istorija brisanja</button></div>':'<h2>Detalji dana</h2><p class="muted">Klikni na dan u tabeli: status se mijenja odmah, a ovdje vidiš dolazak, odlazak i ostale izmjene.</p>')+'</section>';
+ };
+})();
+
+// ===================== BRISANJE SKENIRANJA S ISTORIJOM I VRAĆANJEM (19.10.2026.) =====================
+// Obrisana skeniranja idu u "Istoriju brisanja" (Firebase: records/scanTrash/items) i mogu se vratiti.
+// Kašnjenje, odrađeni sati i statusi se ne čuvaju posebno: računaju se iz skeniranja, pa se za
+// obrisane dane automatski preračunaju. Opcionalno se brišu i ručni statusi SAMO za izabrane radnike i dane.
+SYNC_NAMES.push('scanTrash');
+(function(){
+ const CSS=`
+.bk-danger{background:#fff!important;color:#a61f33!important;border:1.5px solid #e7a3ad!important;font-weight:700}
+.bk-danger:hover{background:#fdecee!important}
+.bkd-tabs{display:flex;gap:6px;border-bottom:1px solid #e3e8ef;margin:-4px 0 14px}
+.bkd-tabs button{border:0;background:none;padding:10px 14px;font-weight:700;color:#5d6b80;border-bottom:3px solid transparent;cursor:pointer}
+.bkd-tabs button.on{color:#14366b;border-bottom-color:#14366b}
+.bkd-filters{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;margin-bottom:12px}
+.bkd-filters label{display:block;font-size:12px;font-weight:700;color:#5d6b80;margin-bottom:4px}
+.bkd-filters input,.bkd-filters select{width:100%;height:38px;border:1px solid #d5dde8;border-radius:8px;padding:0 8px;font:inherit;background:#fff}
+.bkd-quick{display:flex;gap:6px;flex-wrap:wrap;margin:-2px 0 12px}
+.bkd-quick button{border:1px solid #d5dde8;background:#fff;border-radius:999px;padding:5px 12px;font-size:13px;cursor:pointer}
+.bkd-list{max-height:320px;overflow:auto;border:1px solid #e3e8ef;border-radius:10px}
+.bkd-row{display:grid;grid-template-columns:28px 92px 1fr auto auto;gap:10px;align-items:center;padding:8px 12px;border-bottom:1px solid #eef1f5;cursor:pointer}
+.bkd-row:last-child{border-bottom:0}
+.bkd-row:hover{background:#f7f9fc}
+.bkd-row.on{background:#fff3f4}
+.bkd-row input{width:18px;height:18px}
+.bkd-when{font-variant-numeric:tabular-nums;font-size:13px;color:#33445e}
+.bkd-when b{display:block;font-size:14px;color:#16243a}
+.bkd-name{font-weight:500}
+.bkd-kind{font-size:11px;font-weight:800;border-radius:6px;padding:3px 7px}
+.bkd-kind.in{background:#e3f4ec;color:#0e7a57}.bkd-kind.out{background:#fcefdf;color:#b85f0f}
+.bkd-src{font-size:12px;color:#738198}
+.bkd-empty{padding:22px;text-align:center;color:#738198}
+.bkd-bar{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin:10px 0}
+.bkd-bar .muted{font-size:13px}
+.bkd-impact{background:#fff7e6;border:1px solid #f0d49a;border-radius:10px;padding:10px 12px;font-size:14px;color:#5c4300;margin:10px 0}
+.bkd-impact b{color:#3f2e00}
+.bkd-opt{display:flex;gap:8px;align-items:flex-start;font-size:14px;margin:8px 0}
+.bkd-opt input{width:18px;height:18px;margin-top:1px}
+.bkd-del{background:#a61f33!important;color:#fff!important;border:0!important;font-weight:800}
+.bkd-del:disabled{opacity:.45}
+.bkd-hist{display:grid;gap:10px}
+.bkd-batch{border:1px solid #e3e8ef;border-radius:12px;padding:12px 14px;display:grid;grid-template-columns:1fr auto;gap:6px 14px;align-items:center}
+.bkd-batch.restored{background:#f4faf6;border-color:#bfe3cd}
+.bkd-batch h4{margin:0;font-size:15px}
+.bkd-batch p{margin:0;font-size:13px;color:#5d6b80}
+.bkd-batch .acts{display:flex;gap:6px;grid-row:1/span 2;grid-column:2}
+.bkd-tag{display:inline-block;font-size:11px;font-weight:800;border-radius:6px;padding:2px 7px;background:#e1f5ea;color:#0b6b45;margin-left:6px}
+.bkd-batch details{grid-column:1/-1;font-size:13px}
+.bkd-batch details ul{margin:6px 0 0;padding-left:18px;color:#33445e}
+.bk-cal-detail-del{margin-top:12px}`;
+ if(!document.getElementById('bkdCss')){const st=document.createElement('style');st.id='bkdCss';st.textContent=CSS;document.head.appendChild(st)}
+
+ const two=n=>String(n).padStart(2,'0');
+ const dLabel=d=>{const [y,m,dd]=String(d).split('-');return Number(dd)+'.'+Number(m)+'.'+y+'.'};
+ const tLabel=at=>{const x=new Date(at);return two(x.getHours())+':'+two(x.getMinutes())};
+ const name=id=>S.employees.find(e=>e.id===id)?.name||'Nepoznat radnik';
+ const minutes=m=>{m=Math.round(m||0);return m>=60?Math.floor(m/60)+' h '+(m%60?m%60+' min':''):m+' min'};
+ const jsonCopy=v=>JSON.parse(JSON.stringify(v));
+ const trash=()=>{if(!Array.isArray(S.scanTrash))S.scanTrash=[];return S.scanTrash};
+ const keyOf=(empId,date,loc)=>empId+'|'+date+'|'+loc;
+
+ let f={tab:'delete',from:today(),to:today(),loc:null,emp:'',src:'',sel:new Set(),withOverrides:false};
+
+ function list(){
+  return S.events.filter(v=>v&&!v.deleted&&v.locId===f.loc&&dateOfEvent(v.at)>=f.from&&dateOfEvent(v.at)<=f.to&&
+   (!f.emp||v.empId===f.emp)&&(!f.src||(f.src==='barcode'?v.source==='barcode':v.source!=='barcode')))
+   .sort((a,b)=>b.at.localeCompare(a.at));
+ }
+ // Uticaj brisanja: kašnjenje i sati za pogođene radnike/dane prije i poslije (računa se, ništa se ne mijenja).
+ function impact(ids,withOverrides){
+  const chosen=S.events.filter(v=>ids.has(v.id));
+  const pairs=new Map();
+  for(const v of chosen){const d=dateOfEvent(v.at);pairs.set(keyOf(v.empId,d,v.locId),{empId:v.empId,date:d,loc:v.locId})}
+  const measure=()=>{let late=0,worked=0;for(const p of pairs.values()){const e=S.employees.find(x=>x.id===p.empId);if(!e)continue;
+   const t=tardiness(e,p.date,p.loc);if(t>0)late+=t;worked+=eventsDay(p.empId,p.loc,p.date).worked||0}return{late,worked}};
+  const before=measure();
+  const savedE=S.events,savedO=S.overrides;
+  try{
+   S.events=savedE.filter(v=>!ids.has(v.id));
+   if(withOverrides)S.overrides=savedO.filter(o=>!pairs.has(keyOf(o.empId,o.date,o.locId)));
+   var after=measure();
+  }finally{S.events=savedE;S.overrides=savedO}
+  const overrides=withOverrides?savedO.filter(o=>pairs.has(keyOf(o.empId,o.date,o.locId))):[];
+  return {chosen,pairs,before,after,overrides,workers:new Set(chosen.map(v=>v.empId)).size};
+ }
+ function deleteTab(){
+  const rows=list(),shown=rows.slice(0,500);
+  for(const id of [...f.sel])if(!rows.some(v=>v.id===id))f.sel.delete(id);
+  const empOptions=S.employees.filter(e=>!e.isTest).slice().sort((a,b)=>a.name.localeCompare(b.name,'bs'))
+   .map(e=>'<option value="'+esc(e.id)+'"'+(f.emp===e.id?' selected':'')+'>'+esc(e.name)+'</option>').join('');
+  const im=f.sel.size?impact(f.sel,f.withOverrides):null;
+  return '<div class="bkd-filters">'+
+   '<div><label>Objekat</label><select data-bkd-field="loc">'+selections(f.loc)+'</select></div>'+
+   '<div><label>Od datuma</label><input type="date" data-bkd-field="from" value="'+esc(f.from)+'"></div>'+
+   '<div><label>Do datuma</label><input type="date" data-bkd-field="to" value="'+esc(f.to)+'"></div>'+
+   '<div><label>Radnik</label><select data-bkd-field="emp"><option value="">Svi radnici</option>'+empOptions+'</select></div>'+
+   '<div><label>Izvor</label><select data-bkd-field="src"><option value="">Sva skeniranja</option><option value="barcode"'+(f.src==='barcode'?' selected':'')+'>Samo kartica (kasa)</option><option value="manual"'+(f.src==='manual'?' selected':'')+'>Samo ručni unos</option></select></div>'+
+   '</div>'+
+   '<div class="bkd-quick"><button type="button" data-bkd-range="today">Danas</button><button type="button" data-bkd-range="yesterday">Juče</button><button type="button" data-bkd-range="week">Zadnjih 7 dana</button><button type="button" data-bkd-range="month">Ovaj mjesec</button></div>'+
+   '<div class="bkd-bar"><button class="btn small" type="button" data-bkd-all="1">Označi sve prikazano ('+shown.length+')</button><button class="btn small" type="button" data-bkd-none="1">Poništi oznake</button>'+
+   '<span class="muted">Pronađeno: <b>'+rows.length+'</b> skeniranja'+(rows.length>500?' (prikazano prvih 500 – suzi period)':'')+' · označeno: <b>'+f.sel.size+'</b></span></div>'+
+   '<div class="bkd-list">'+(shown.map(v=>{const on=f.sel.has(v.id);return '<label class="bkd-row'+(on?' on':'')+'"><input type="checkbox" data-bkd-ev="'+esc(v.id)+'"'+(on?' checked':'')+'>'+
+    '<span class="bkd-when"><b>'+tLabel(v.at)+'</b>'+dLabel(dateOfEvent(v.at))+'</span><span class="bkd-name">'+esc(name(v.empId))+'</span>'+
+    '<span class="bkd-kind '+(v.kind==='out'?'out':'in')+'">'+(v.kind==='out'?'ODLAZAK':'DOLAZAK')+'</span><span class="bkd-src">'+(v.source==='barcode'?'kartica':'ručno')+'</span></label>'}).join('')||
+    '<div class="bkd-empty">Nema skeniranja za izabrani period i filter.</div>')+'</div>'+
+   (im?'<div class="bkd-impact">Biće obrisano <b>'+im.chosen.length+'</b> skeniranja · <b>'+im.workers+'</b> radnika · <b>'+im.pairs.size+'</b> radnih dana.<br>'+
+    'Kašnjenje za te dane: <b>'+minutes(im.before.late)+'</b> → <b>'+minutes(im.after.late)+'</b> · odrađeno: <b>'+minutes(im.before.worked)+'</b> → <b>'+minutes(im.after.worked)+'</b>.'+
+    (f.withOverrides?'<br>Ručni statusi za te dane koji se brišu: <b>'+im.overrides.length+'</b>.':'')+'<br>Ostali radnici i dani se ne mijenjaju.</div>':'')+
+   '<label class="bkd-opt"><input type="checkbox" data-bkd-ovr="1"'+(f.withOverrides?' checked':'')+'><span>Obriši i ručne statuse (P, N, GO…) <b>samo za izabrane radnike i dane</b>. Bez ove oznake ručni statusi ostaju.</span></label>'+
+   '<div class="modalfoot"><button class="btn" type="button" data-act="close-modal">Zatvori</button><button class="btn bkd-del" type="button" data-bkd-delete="1"'+(f.sel.size?'':' disabled')+'>Obriši izabrano ('+f.sel.size+')</button></div>';
+ }
+ function historyTab(){
+  const items=trash();
+  if(!items.length)return '<div class="bkd-empty">Istorija brisanja je prazna. Svako brisanje skeniranja pojaviće se ovdje i moći će se vratiti.</div>';
+  return '<div class="bkd-hist">'+items.map(b=>{
+   const people=[...new Set((b.events||[]).map(v=>name(v.empId)))];
+   const restored=!!b.restoredAt;
+   return '<div class="bkd-batch'+(restored?' restored':'')+'"><h4>'+esc(b.title||'Brisanje skeniranja')+(restored?'<span class="bkd-tag">VRAĆENO '+esc(dLabel(b.restoredAt.slice(0,10))+' '+tLabel(b.restoredAt))+'</span>':'')+'</h4>'+
+    '<div class="acts">'+(restored?'':'<button class="btn small primary" type="button" data-bkd-restore="'+esc(b.id)+'">↺ Vrati</button>')+'<button class="btn small" type="button" data-bkd-purge="'+esc(b.id)+'" title="Trajno ukloni iz istorije">Ukloni</button></div>'+
+    '<p>Obrisano '+esc(dLabel(b.at.slice(0,10))+' u '+tLabel(b.at))+' · '+(b.events||[]).length+' skeniranja'+((b.overrides||[]).length?' + '+b.overrides.length+' ručnih statusa':'')+' · '+esc(people.slice(0,3).join(', ')+(people.length>3?' i još '+(people.length-3):''))+'</p>'+
+    '<details><summary>Šta je obrisano</summary><ul>'+(b.events||[]).slice().sort((x,y)=>x.at.localeCompare(y.at)).map(v=>'<li>'+esc(dLabel(dateOfEvent(v.at))+' '+tLabel(v.at)+' · '+name(v.empId)+' · '+(v.kind==='out'?'odlazak':'dolazak')+' · '+(v.source==='barcode'?'kartica':'ručno'))+'</li>').join('')+
+    (b.overrides||[]).map(o=>'<li>'+esc(dLabel(o.date)+' · '+name(o.empId)+' · ručni status '+o.status)+'</li>').join('')+'</ul></details></div>';
+  }).join('')+'</div>';
+ }
+ function show(){
+  if(!f.loc)f.loc=calLoc||S.locations[0]?.id;
+  const count=trash().filter(b=>!b.restoredAt).length;
+  modal('Brisanje skeniranja','<div class="bkd-tabs"><button type="button" data-bkd-tab="delete" class="'+(f.tab==='delete'?'on':'')+'">Obriši skeniranja</button><button type="button" data-bkd-tab="history" class="'+(f.tab==='history'?'on':'')+'">Istorija brisanja'+(count?' ('+count+')':'')+'</button></div>'+
+   (f.tab==='delete'?deleteTab():historyTab()));
+ }
+ function open(opts={}){
+  f={...f,tab:opts.tab||'delete',sel:new Set(opts.sel||[]),withOverrides:false,
+   loc:opts.loc||calLoc||S.locations[0]?.id,from:opts.from||f.from||today(),to:opts.to||opts.from||f.to||today(),emp:opts.emp??'',src:opts.src??''};
+  show();
+ }
+ window.balkanOpenScanDelete=open;
+ function persist(){return save().catch(err=>alert('Izmjena NIJE sačuvana: '+(err?.message||err)))}
+ function doDelete(ids,{withOverrides=false,silentConfirm=false,title=''}={}){
+  const im=impact(ids,withOverrides);
+  if(!im.chosen.length)return null;
+  if(!silentConfirm&&!confirm('Obrisati '+im.chosen.length+' skeniranja ('+im.workers+' radnika, '+im.pairs.size+' dana)?\n\n'+
+   'Kašnjenje i sati za te dane biće preračunati ('+minutes(im.before.late)+' kašnjenja → '+minutes(im.after.late)+').\n'+
+   (withOverrides?'Brišu se i ručni statusi za te dane: '+im.overrides.length+'.\n':'')+
+   'Sve se može vratiti u „Istorija brisanja“.'))return null;
+  const people=[...new Set(im.chosen.map(v=>name(v.empId)))];
+  const dates=[...new Set(im.chosen.map(v=>dateOfEvent(v.at)))].sort();
+  const batch={id:uid(),at:new Date().toISOString(),by:S.admin?.username||'Administrator',
+   title:title||(locName(im.chosen[0].locId)+' · '+(dates.length>1?dLabel(dates[0])+' – '+dLabel(dates[dates.length-1]):dLabel(dates[0]))+' · '+(people.length===1?people[0]:people.length+' radnika')),
+   events:jsonCopy(im.chosen),overrides:jsonCopy(im.overrides),
+   impact:{lateBefore:im.before.late,lateAfter:im.after.late,workedBefore:im.before.worked,workedAfter:im.after.worked},restoredAt:null};
+  S.events=S.events.filter(v=>!ids.has(v.id));
+  if(im.overrides.length){const drop=new Set(im.overrides.map(o=>o.id));S.overrides=S.overrides.filter(o=>!drop.has(o.id))}
+  trash().unshift(batch);
+  audit('Brisanje skeniranja',batch.title+' · '+batch.events.length+' skeniranja'+(batch.overrides.length?' + '+batch.overrides.length+' ručnih statusa':''));
+  render();persist();
+  return batch;
+ }
+ function restore(id){
+  const b=trash().find(x=>x.id===id);if(!b||b.restoredAt)return;
+  let back=0,skipped=0;
+  for(const v of b.events||[]){if(S.events.some(x=>x.id===v.id)){skipped++;continue}S.events.push(jsonCopy(v));back++}
+  for(const o of b.overrides||[]){
+   if(S.overrides.some(x=>x.empId===o.empId&&x.date===o.date&&x.locId===o.locId)){skipped++;continue}
+   S.overrides.push(jsonCopy(o));back++;
+  }
+  b.restoredAt=new Date().toISOString();
+  audit('Vraćeno obrisano skeniranje',b.title+' · vraćeno '+back+(skipped?', preskočeno (već postoji) '+skipped:''));
+  render();persist();
+  return {back,skipped};
+ }
+ function toastUndo(batch){
+  if(typeof window.bkToast==='function')window.bkToast('Obrisano '+batch.events.length+' skeniranja · '+batch.title,{canUndo:true,onUndo:()=>{restore(batch.id);if(document.querySelector('.bkd-tabs'))show()}});
+ }
+ // --- događaji u prozoru ---
+ const modalRoot=document.getElementById('modal');
+ modalRoot.addEventListener('change',e=>{
+  const t=e.target;
+  if(t.matches('[data-bkd-field]')){f[t.dataset.bkdField]=t.value;if(f.from>f.to)(t.dataset.bkdField==='from'?f.to=f.from:f.from=f.to);f.sel.clear();show();return}
+  if(t.matches('[data-bkd-ev]')){t.checked?f.sel.add(t.dataset.bkdEv):f.sel.delete(t.dataset.bkdEv);show();return}
+  if(t.matches('[data-bkd-ovr]')){f.withOverrides=t.checked;show()}
+ });
+ modalRoot.addEventListener('click',e=>{
+  const t=e.target.closest('[data-bkd-tab],[data-bkd-all],[data-bkd-none],[data-bkd-delete],[data-bkd-restore],[data-bkd-purge],[data-bkd-range]');
+  if(!t)return;
+  e.preventDefault();e.stopImmediatePropagation();
+  if(t.dataset.bkdTab){f.tab=t.dataset.bkdTab;show();return}
+  if(t.dataset.bkdRange){
+   const d=new Date(),iso=x=>x.getFullYear()+'-'+two(x.getMonth()+1)+'-'+two(x.getDate());
+   if(t.dataset.bkdRange==='today'){f.from=f.to=today()}
+   if(t.dataset.bkdRange==='yesterday'){d.setDate(d.getDate()-1);f.from=f.to=iso(d)}
+   if(t.dataset.bkdRange==='week'){f.to=today();d.setDate(d.getDate()-6);f.from=iso(d)}
+   if(t.dataset.bkdRange==='month'){f.to=today();f.from=today().slice(0,8)+'01'}
+   f.sel.clear();show();return;
+  }
+  if(t.dataset.bkdAll){for(const v of list().slice(0,500))f.sel.add(v.id);show();return}
+  if(t.dataset.bkdNone){f.sel.clear();show();return}
+  if(t.dataset.bkdDelete){const b=doDelete(new Set(f.sel),{withOverrides:f.withOverrides});if(b){f.sel.clear();f.tab='history';show();toastUndo(b)}return}
+  if(t.dataset.bkdRestore){const r=restore(t.dataset.bkdRestore);show();if(r)alert('Vraćeno: '+r.back+(r.skipped?'. Preskočeno jer već postoji: '+r.skipped:'')+'.\nKašnjenje i sati su ponovo izračunati.');return}
+  if(t.dataset.bkdPurge){
+   const b=trash().find(x=>x.id===t.dataset.bkdPurge);if(!b)return;
+   if(!confirm('Trajno ukloniti ovaj zapis iz istorije brisanja?'+(b.restoredAt?'':'\nNAKON TOGA OVA SKENIRANJA SE VIŠE NE MOGU VRATITI.')))return;
+   S.scanTrash=trash().filter(x=>x.id!==b.id);audit('Trajno uklonjeno iz istorije brisanja',b.title);render();persist();show();
+  }
+ },true);
+ // --- otvaranje i pojedinačno brisanje iz detalja dana ---
+ document.getElementById('app').addEventListener('click',e=>{
+  const open1=e.target.closest('[data-bkd-open]'),single=e.target.closest('[data-del-event]');
+  if(open1){e.preventDefault();e.stopImmediatePropagation();
+   open({from:open1.dataset.date||undefined,to:open1.dataset.date||undefined,emp:open1.dataset.emp||'',loc:open1.dataset.loc||undefined,tab:open1.dataset.tab});return}
+  if(single){e.preventDefault();e.stopImmediatePropagation();
+   const v=S.events.find(x=>x.id===single.dataset.delEvent);if(!v)return;
+   if(!confirm('Obrisati ovo skeniranje?\n'+name(v.empId)+' · '+dLabel(dateOfEvent(v.at))+' '+tLabel(v.at)+' · '+(v.kind==='out'?'odlazak':'dolazak')+'\n\nKašnjenje i sati se preračunavaju. Može se vratiti u „Istorija brisanja“.'))return;
+   const b=doDelete(new Set([v.id]),{silentConfirm:true,title:'Pojedinačno: '+name(v.empId)+' · '+dLabel(dateOfEvent(v.at))+' '+tLabel(v.at)});
+   if(b)toastUndo(b);
+  }
+ },true);
+})();
+
+// ===================== GODIŠNJI ODMORI v2 (19.10.2026.) =====================
+// Novi pregled stranice, obrazac "Novo rješenje" s kalendarom (od–do) i vjeran prikaz rješenja
+// prema originalnom Word dokumentu. Čuvanje i provjere ostaju u postojećem obrascu (#leaveDecisionForm).
+(function(){
+ const CSS=`
+.lv-wrap{display:grid;gap:16px}
+.lv-hero{display:grid;grid-template-columns:minmax(0,1.25fr) minmax(0,1fr);gap:18px;align-items:stretch}
+.lv-person{display:flex;flex-direction:column;gap:14px}
+.lv-person h2{margin:0;font-size:24px}
+.lv-person .sub{color:#5d6b80;font-size:14px;margin-top:2px}
+.lv-bar{height:16px;border-radius:999px;background:#eef1f5;overflow:hidden;display:flex}
+.lv-bar i{display:block;height:100%}
+.lv-bar .u{background:#1f7a55}.lv-bar .r{background:#4c86d9}.lv-bar .o{background:#e0533d}
+.lv-nums{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px}
+.lv-num.or b{font-size:30px}
+.lv-num{border:1px solid #e3e8ef;border-radius:12px;padding:10px 12px}
+.lv-num b{display:block;font-size:26px;line-height:1.1;font-variant-numeric:tabular-nums}
+.lv-num span{font-size:12px;color:#5d6b80;font-weight:600}
+.lv-num.g b{color:#1f7a55}.lv-num.bl b{color:#2a62b8}.lv-num.or b{color:#b45d0d}.lv-num.rd b{color:#b42a40}
+.lv-num.tot{background:#f3f6fb}.lv-num.or{background:#fff6ec;border-color:#f3d2a8}
+.lv-calc{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin:6px 0 10px}
+.lv-calc div{border:1px solid #e3e8ef;border-radius:10px;padding:8px 12px;min-width:92px}
+.lv-calc div span{display:block;font-size:12px;color:#5d6b80;font-weight:600}
+.lv-calc div b{font-size:22px;font-variant-numeric:tabular-nums}
+.lv-calc div.tot{background:#f3f6fb}.lv-calc div.rem{background:#fff6ec;border-color:#f3d2a8}.lv-calc div.rem b{color:#b45d0d}
+.lv-calc em{font-style:normal;font-size:20px;color:#8592a6;font-weight:700}
+.lv-table td{font-variant-numeric:tabular-nums}
+.lv-table .lv-u{color:#1f7a55;font-weight:700}.lv-table .lv-p{color:#2a62b8;font-weight:700}.lv-table .lv-n{color:#b42a40;font-weight:700}
+.lv-table .lv-rem{color:#b45d0d;font-size:15px}.lv-table .lv-rem.bad{color:#a61f33}
+.lv-table tr.lv-sel td{background:#f3f7fd}
+.lv-actions{display:flex;gap:8px;flex-wrap:wrap}
+.lv-new{font-size:16px!important;padding:12px 20px!important}
+.lv-year{display:grid;grid-template-columns:repeat(4,1fr);gap:10px 12px}
+.lv-mini h4{margin:0 0 4px;font-size:12px;color:#33445e;font-weight:700}
+.lv-mini .g{display:grid;grid-template-columns:repeat(7,1fr);gap:2px}
+.lv-mini .g span{height:11px;border-radius:2px;background:#f1f3f7}
+.lv-mini .g span.P{background:#bfe6d1}.lv-mini .g span.GO{background:#2a62b8}.lv-mini .g span.BO{background:#a68ad9}
+.lv-mini .g span.N{background:#f5c3cb}.lv-mini .g span.H,.lv-mini .g span.VH{background:#7ccbb1}.lv-mini .g span.ND{background:#e3e7ee}
+.lv-mini .g span.x{background:transparent}
+.lv-legend{display:flex;gap:12px;flex-wrap:wrap;font-size:12px;color:#5d6b80;margin-top:10px}
+.lv-legend i{display:inline-block;width:12px;height:12px;border-radius:3px;margin-right:5px;vertical-align:-2px}
+.lv-decs{display:grid;gap:10px}
+.lv-dec{display:grid;grid-template-columns:auto 1fr auto;gap:14px;align-items:center;border:1px solid #e3e8ef;border-radius:12px;padding:12px 14px}
+.lv-dec.cx{opacity:.6;background:#f7f8fa}
+.lv-dec .no{font-weight:800;color:#14366b;background:#eaf1fb;border-radius:8px;padding:8px 10px;font-variant-numeric:tabular-nums}
+.lv-dec .per{font-weight:700}
+.lv-dec .meta{font-size:13px;color:#5d6b80}
+.lv-empty{padding:18px;text-align:center;color:#738198;border:1px dashed #d5dde8;border-radius:12px}
+.lv-wrap #balkanLiveLeaveSummary .simpletable td,.lv-wrap #balkanLiveLeaveSummary .simpletable th{font-size:13px}
+.lv-toolbar{display:flex;gap:12px;align-items:flex-end;flex-wrap:wrap}
+.lv-toolbar .field{min-width:160px}
+.lv-legal{font-size:12px;color:#5d6b80}
+/* ---- obrazac ---- */
+.modal:has(.lv-wiz){max-width:min(1360px,96vw)!important;width:96vw}
+.lv-wiz{display:grid;grid-template-columns:minmax(0,1fr) 520px;gap:18px;align-items:start}
+.lv-step{border:1px solid #e3e8ef;border-radius:12px;padding:12px 14px;margin-bottom:12px}
+.lv-step h3{margin:0 0 10px;font-size:15px;display:flex;align-items:center;gap:8px}
+.lv-step h3 em{font-style:normal;background:#14366b;color:#fff;border-radius:50%;width:22px;height:22px;display:inline-grid;place-items:center;font-size:12px}
+.lv-row{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px}
+.lv-row label{display:block;font-size:12px;font-weight:700;color:#5d6b80;margin-bottom:4px}
+.lv-row input,.lv-row select{width:100%;height:38px;border:1px solid #d5dde8;border-radius:8px;padding:0 9px;font:inherit;background:#fff}
+.lv-emp-info{font-size:13px;color:#33445e;margin-top:8px}
+.lv-cals{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+.lv-cal h4{margin:0 0 6px;text-align:center;font-size:14px}
+.lv-cal .wk,.lv-cal .days{display:grid;grid-template-columns:repeat(7,1fr);gap:3px}
+.lv-cal .wk span{font-size:11px;color:#8592a6;text-align:center;font-weight:700}
+.lv-cal button{height:34px;border:0;border-radius:7px;font:600 13px/1 inherit;cursor:pointer;background:#f3f5f8;color:#33445e;position:relative}
+.lv-cal button:hover{outline:2px solid #4b7fd1}
+.lv-cal button.P{background:#d3f1e2;color:#06633f}
+.lv-cal button.N{background:#ffe3e7;color:#a8203a}
+.lv-cal button.GO{background:#d9e8ff;color:#164f9e}
+.lv-cal button.BO{background:#ece2fd;color:#5f3f9c}
+.lv-cal button.H,.lv-cal button.VH{background:#d5efe6;color:#13664f}
+.lv-cal button.ND{background:#fff;color:#b2bccb}
+.lv-cal button.out{background:transparent;color:#d0d6df;cursor:default}
+.lv-cal button.in{box-shadow:inset 0 0 0 2px #14366b}
+.lv-cal button.count::after{content:'';position:absolute;left:6px;right:6px;bottom:3px;height:3px;border-radius:2px;background:#14366b}
+.lv-cal button.edge{background:#14366b!important;color:#fff!important}
+.lv-cal button.conf{box-shadow:inset 0 0 0 2px #d1253d}
+.lv-calnav{display:flex;justify-content:space-between;align-items:center;margin-bottom:8px}
+.lv-calnav button{border:1px solid #d5dde8;background:#fff;border-radius:8px;width:34px;height:32px;font-size:18px;cursor:pointer}
+.lv-sum{margin-top:10px;border-radius:10px;padding:10px 12px;background:#eef3fa;font-size:14px}
+.lv-sum b{font-size:16px}
+.lv-sum.bad{background:#fdecee;color:#8c1426}
+.lv-sum ul{margin:6px 0 0;padding-left:18px}
+.lv-hint{font-size:12px;color:#5d6b80;margin-top:6px}
+.lv-short{display:flex;gap:8px;align-items:flex-start;font-size:13px;margin-top:8px;background:#fff7e6;border:1px solid #f0d49a;border-radius:8px;padding:8px 10px}
+.lv-preview{position:sticky;top:0}
+.lv-preview .cap{font-size:12px;font-weight:700;color:#5d6b80;margin-bottom:6px}
+.lv-paper{width:520px;height:736px;overflow:hidden;border:1px solid #d5dde8;border-radius:6px;background:#fff;box-shadow:0 6px 20px #14263d1f}
+.lv-paper .rj-page{transform:scale(.655);transform-origin:top left}
+@media (max-width:1100px){.lv-wiz{grid-template-columns:1fr}.lv-preview{position:static}.lv-hero{grid-template-columns:1fr}.lv-year{grid-template-columns:repeat(3,1fr)}}
+@media (max-width:700px){.lv-cals{grid-template-columns:1fr}.lv-nums{grid-template-columns:repeat(2,1fr)}.lv-paper{width:100%;height:auto}.lv-paper .rj-page{transform:none}}
+/* ---- rješenje ---- */
+.rj-page{width:210mm;min-height:297mm;padding:17.5mm 23.4mm 12.7mm 25mm;background:#fff;color:#000;font:11pt/1.32 Arial,Helvetica,sans-serif;box-sizing:border-box}
+.rj-page p{margin:0}
+.rj-j{text-align:justify}
+.rj-gap{height:11pt}.rj-gap2{height:22pt}
+.rj-h{text-align:center;font-weight:bold;margin:0}
+.rj-it{font-style:italic;font-size:10pt;text-align:justify;line-height:1.38}
+.rj-list{font-style:italic;font-size:10pt;margin:0;padding-left:2.2em}
+.rj-list ul{margin:0;padding-left:2.4em;list-style:disc}
+.rj-u{text-decoration:underline;font-weight:bold}
+.rj-f{}
+.rj-mark .rj-f{background:#fff2a8;box-shadow:0 0 0 1px #f0d36a}
+.rj-sign{display:flex;justify-content:flex-end;margin-top:26pt}
+.rj-sign div{width:62mm;text-align:center}
+.rj-sign .line{border-top:1px solid #000;margin-top:30pt}
+.rj-sent{font-size:8pt;margin-top:14pt}
+.rj-sent ul{margin:2pt 0 0;padding-left:3em;list-style:'-   '}`;
+ if(!document.getElementById('lvCss')){const st=document.createElement('style');st.id='lvCss';st.textContent=CSS;document.head.appendChild(st)}
+
+ const GENITIV={'Bar':'Bara','Ulcinj':'Ulcinja','Podgorica':'Podgorice','Gusinje':'Gusinja','Plav':'Plava','Budva':'Budve','Nikšić':'Nikšića','Kotor':'Kotora','Tivat':'Tivta','Herceg Novi':'Herceg Novog','Cetinje':'Cetinja','Rožaje':'Rožaja','Berane':'Berana','Bijelo Polje':'Bijelog Polja','Pljevlja':'Pljevalja','Danilovgrad':'Danilovgrada','Kolašin':'Kolašina','Andrijevica':'Andrijevice','Mojkovac':'Mojkovca','Žabljak':'Žabljaka','Petnjica':'Petnjice','Tuzi':'Tuzi','Šavnik':'Šavnika','Plužine':'Plužina','Zeta':'Zete','Golubovci':'Golubovaca','Sutomore':'Sutomora','Virpazar':'Virpazara'};
+ const genitiv=v=>{const t=String(v||'').trim();return GENITIV[t]||t};
+ // Mjesto u rješenju ide u genitivu ("iz Bara"), i u Word izvozu i u štampi.
+ const _origVars=originalVars;
+ originalVars=function(d,jmb=''){const v=_origVars(d,jmb);if(d.residence)v.MJESTO_RADNIKA=genitiv(d.residence);return v};
+
+ const fld=(v)=>'<span class="rj-f">'+esc(v)+'</span>';
+ function rjHtml(d,jmb=''){
+  const v=originalVars(d,jmb),body=originalDocBody(d);
+  if(body!==ORIGINAL_WORD_BODY){
+   // Izmijenjen šablon: prikaz red po red s popunjenim poljima.
+   return '<div class="rj-page">'+body.split('\n').map(line=>{
+    const html=esc(line).replace(/\{\{([A-Z_]+)\}\}/g,(m,k)=>v[k]===undefined?m:'<b>'+fld(v[k])+'</b>');
+    return line.trim()?'<p class="rj-j">'+html.replace(/\\n|\n/g,'<br>')+'</p>':'<div class="rj-gap"></div>';
+   }).join('')+'</div>';
+  }
+  const dash=s=>esc(s).replace(/ - /g,' - ');
+  return '<div class="rj-page">'+
+   '<p class="rj-j">Na osnovu člana 83 stav 2 Zakona o radu ("Sl. list CG", br. 074/19, 008/21, 059/21, 068/21, 145/21, 077/24, 084/24, 086/24, 122/25, 165/25, 051/26) i člana 9 Opšteg kolektivnog ugovora (”Sl. list CG”, br. 150/22), kao i ugovora o radu, izvršni direktor <b>'+fld(v.POSLODAVAC)+' '+fld(v.MJESTO_POSLODAVCA)+'</b> donosi:</p>'+
+   '<div class="rj-gap2"></div><p class="rj-h">RJEŠENJE O KORIŠĆENJU GODIŠNJEG ODMORA</p><div class="rj-gap"></div>'+
+   '<p class="rj-j">Zaposlenom/-oj <span class="rj-u">'+fld(v.RADNIK)+'</span> iz <span class="rj-u">'+fld(v.MJESTO_RADNIKA)+'</span>, <b>JMB:</b> <span class="rj-u">'+fld(v.JMB)+'</span>, u radnom odnosu '+fld(v.VRSTA_UGOVORA)+', raspoređenom/-oj na radnom mjestu <span class="rj-u">'+fld(v.RADNO_MJESTO)+'</span>, <i>odobrava</i> se godišnji odmor <b><i>za kalendarsku '+fld(v.GODINA)+'</i></b>. godinu, u trajanju od <b>'+fld(v.PRAVO_DANA)+' radnih dana.</b></p>'+
+   '<div class="rj-gap"></div>'+
+   '<p class="rj-it">Trajanje godišnjeg odmora utvrđuje se srazmjerno vremenu provedenom u radnom odnosu. Zaposleni ima pravo na 1/12 godišnjeg odmora za svaki započeti mjesec dana rada kod poslodavca ako u toj kalendarskoj godini zasniva radni odnos ili mu prestaje radni odnos kod poslodavca. Zaposleni ima pravo na godišnji odmor u trajanju od najmanje 20 radnih dana za kalendarsku godinu.</p>'+
+   '<div class="rj-gap"></div>'+
+   '<p class="rj-it">Zaposleni koji radi šest radnih dana ima pravo na godišnji odmor u trajanju od 24 radna dana.<br>Zaposleni mlađi od 18 godina života ima pravo na godišnji odmor u trajanju od 24 dana.<br>Zaposleno lice sa invaliditetom ima pravo na godišnji odmor u trajanju od najmanje 26 radnih dana.</p>'+
+   '<div class="rj-gap"></div><p class="rj-it">Godišnji odmor se uvećava:</p>'+
+   '<ol class="rj-list"><li>prema dužini radnog staža:<ul><li>od 5-15 godina - 1 radni dan</li><li>od 15-25 godina - 2 radna dana</li><li>od 25-35 godina - 3 radna dana</li><li>preko 35 godina – 5 radna dana</li></ul></li>'+
+   '<li>prema zdravstvenom stanju:<ul><li>roditelju djeteta koje ima smetnje u razvoju - 3 radna dana</li></ul></li><li>samohranom roditelju djeteta do 15 godina života – 2 radna dana</li></ol>'+
+   '<div class="rj-gap"></div>'+
+   '<p class="rj-j">Korišćenje godišnjeg odmora za <b>'+fld(v.GODINA)+'</b>. godinu će zaposleni započeti sa korišćenjem kada proces i organizacija rada budu dozvolili, stim da isti ima obavezu da isti iskoristi najkasnije i zaključno sa 30.06.'+fld(v.GODINA_NAREDNA)+'. godine, a sve u dogovoru sa direktno nadređenim.</p>'+
+   '<div class="rj-gap"></div>'+
+   '<p class="rj-j">Zaposleni će koristiti odmoru u periodu od <b>'+fld(v.OD)+'</b> do <b>'+fld(v.DO)+'</b>.</p>'+
+   '<div class="rj-gap2"></div>'+
+   '<p>NAPOMENA:<br>Organizator procesa rada je u obavezi da prati i na propisan način evidentira dane korišćenja godišnjeg odmora zaposlenog.</p>'+
+   '<div class="rj-gap"></div><p>PRAVNA POUKA:<br>Protiv ovog Rešenja zaposleni ima pravo prigovora donosiocu istog u roku od 8 (osam) dana od dana prijema Rešenja.</p>'+
+   '<div class="rj-sign"><div>Izvršni direktor'+(v.DIREKTOR_DODATAK?'<br>'+fld(String(v.DIREKTOR||'').trim()):'')+'<div class="line"></div></div></div>'+
+   '<div class="rj-sent">Dostavljeno:<ul><li>Zaposlenom/oj</li><li>Dosije zaposlenog</li></ul></div>'+
+   '</div>';
+ }
+ window.balkanDecisionHtml=rjHtml;
+ function printDecision(d,jmb){
+  const w=window.open('','_blank','width=900,height=1000');
+  if(!w){alert('Dozvoli otvaranje prozora za štampu u pregledniku.');return}
+  const css=document.getElementById('lvCss').textContent;
+  w.document.open();
+  w.document.write('<!DOCTYPE html><html lang="bs"><head><meta charset="utf-8"><title>Rješenje '+esc(d.number||'')+' – '+esc(d.employeeName||'')+'</title><style>'+css+
+   '@page{size:A4;margin:0}body{margin:0;background:#e8edf3;font-family:Arial,sans-serif}.bar{position:sticky;top:0;background:#14263d;color:#fff;display:flex;gap:12px;align-items:center;justify-content:center;padding:12px}.bar button{background:#2a62b8;color:#fff;border:0;border-radius:8px;padding:10px 16px;font:700 14px Arial;cursor:pointer}.sheet{margin:18px auto;width:210mm;box-shadow:0 8px 30px #0003}@media print{body{background:#fff}.bar{display:none}.sheet{margin:0;box-shadow:none}}</style></head><body>'+
+   '<div class="bar"><b>Rješenje '+esc(d.number||'')+' · '+esc(d.employeeName||'')+'</b><button onclick="window.print()">⎙ Štampaj</button><small>Ponovna štampa ne mijenja evidenciju.</small></div><div class="sheet">'+rjHtml(d,jmb)+'</div></body></html>');
+  w.document.close();w.focus();
+ }
+ let jmbCache=null; // JMB se NE čuva u bazi; pamti se samo dok je stranica otvorena, za odmah štampu.
+ const _prevDocDecision=docDecision;
+ docDecision=function(id,action){
+  const d=S.leaveDecisions.find(x=>x.id===id);if(!d)return;
+  if(action!=='print')return _prevDocDecision(id,action);
+  if(!unlocked){alert('Prijavi se kao administrator.');return}
+  let jmb=jmbCache&&jmbCache.empId===d.empId?jmbCache.jmb:null;
+  if(jmb===null){jmb=prompt('JMB (opcionalno, samo za štampu; neće biti sačuvan u programu):','');if(jmb===null)return}
+  printDecision(d,jmb);
+ };
+
+ // ---------------- OBRAZAC NOVO RJEŠENJE ----------------
+ const two=n=>String(n).padStart(2,'0');
+ const MON=['Januar','Februar','Mart','April','Maj','Jun','Jul','Avgust','Septembar','Oktobar','Novembar','Decembar'];
+ const dl=s=>{if(!s)return '';const [y,m,d]=s.split('-');return Number(d)+'.'+Number(m)+'.'+y+'.'};
+ let wz=null;
+ function wzEmployee(){return S.employees.find(e=>e.id===wz.empId)}
+ function grantFor(e){return e?leaveGrant(e.id,Number(wz.year)):null}
+ function statusAt(e,date){
+  if(!e||!employeeAt(e,date))return 'out';
+  if(existingLeaveDay(e.id,date))return 'GO';
+  return dayStatus(e,date,assigned(e,date)||e.defaultLocationId);
+ }
+ function rangeInfo(){
+  const e=wzEmployee(),g=grantFor(e);
+  if(!e||!wz.from)return null;
+  const to=wz.to||wz.from;
+  let days=[],error='';
+  try{days=g?leaveDays(wz.from,to,g.weekdays,[],e.id):[]}catch(err){error=err.message}
+  const conflicts=days.filter(date=>S.events.some(v=>v.empId===e.id&&dateOfEvent(v.at)===date&&v.kind==='in')||S.overrides.some(o=>o.empId===e.id&&o.date===date&&['BO','P','ND'].includes(o.status)));
+  const dup=days.filter(x=>existingLeaveDay(e.id,x)||S.overrides.some(o=>o.empId===e.id&&o.date===x&&o.status==='GO'));
+  const count=g?leaveCount(e.id,Number(wz.year)):null;
+  const bal=lvBalance(e,Number(wz.year));
+  return {days,conflicts,dup,error,remaining:bal.remaining,after:bal.remaining==null?null:bal.remaining-days.length,overGrant:count&&days.length>count.remaining?count.remaining:null,set:new Set(days),conf:new Set([...conflicts,...dup])};
+ }
+ function monthHtml(y,m,e,ri){
+  const first=new Date(y,m-1,1),n=new Date(y,m,0).getDate(),lead=(first.getDay()+6)%7;
+  let cells='';for(let i=0;i<lead;i++)cells+='<span></span>';
+  for(let d=1;d<=n;d++){
+   const date=y+'-'+two(m)+'-'+two(d),st=statusAt(e,date);
+   const inR=wz.from&&date>=wz.from&&date<=(wz.to||wz.from);
+   const cls=[st==='F'?'':st,inR?'in':'',ri?.set.has(date)?'count':'',date===wz.from||date===wz.to?'edge':'',ri?.conf.has(date)?'conf':''].filter(Boolean).join(' ');
+   const tip=dl(date)+' · '+(st==='out'?'van radnog odnosa':st==='F'?'još nije nastupio':statusText(st));
+   cells+='<button type="button" class="'+cls+'" data-wz-day="'+date+'" title="'+esc(tip)+'"'+(st==='out'?' disabled':'')+'>'+d+'</button>';
+  }
+  return '<div class="lv-cal"><h4>'+MON[m-1]+' '+y+'.</h4><div class="wk">'+['Pon','Uto','Sri','Čet','Pet','Sub','Ned'].map(x=>'<span>'+x+'</span>').join('')+'</div><div class="days">'+cells+'</div></div>';
+ }
+ function decisionDraft(){
+  const e=wzEmployee(),g=grantFor(e),f=document.getElementById('leaveDecisionForm');
+  const val=n=>f?.elements[n]?.value||'';
+  return {id:'draft',empId:e?.id,employeeName:e?.name||'',year:Number(wz.year),number:val('number'),from:wz.from||'',to:wz.to||wz.from||'',
+   position:val('position'),residence:val('residence'),contract:val('contract'),entitlementAtIssue:g?.days??null,
+   templateSnapshot:S.leaveTemplates.find(x=>x.id==='annual-main')};
+ }
+ function paint(){
+  const e=wzEmployee(),g=grantFor(e),ri=rangeInfo();
+  const f=document.getElementById('leaveDecisionForm');if(!f)return;
+  f.elements.from.value=wz.from||'';f.elements.to.value=wz.to||wz.from||'';
+  f.elements.year.value=wz.year;
+  const [y,m]=wz.month.split('-').map(Number),n2=m===12?[y+1,1]:[y,m+1];
+  document.getElementById('wzCal').innerHTML='<div class="lv-calnav"><button type="button" data-wz-month="-1" aria-label="Prethodni mjesec">‹</button><span class="lv-hint">Klikni prvi dan odmora, pa posljednji dan.</span><button type="button" data-wz-month="1" aria-label="Sljedeći mjesec">›</button></div><div class="lv-cals">'+monthHtml(y,m,e,ri)+monthHtml(n2[0],n2[1],e,ri)+'</div>'+
+   '<div class="lv-legend"><span><i style="background:#d3f1e2"></i>Radio</span><span><i style="background:#ffe3e7"></i>Nije radio</span><span><i style="background:#d9e8ff"></i>Već na godišnjem</span><span><i style="background:#ece2fd"></i>Bolovanje</span><span><i style="background:#d5efe6"></i>Praznik</span><span><i style="background:#fff;border:1px solid #d5dde8"></i>Neradni dan</span><span><i style="background:#14366b"></i>Izabrani period</span></div>';
+  let sum='';
+  if(!e)sum='<div class="lv-sum">Izaberi radnika.</div>';
+  else if(!g)sum='<div class="lv-sum bad">Radnik nema utvrđen godišnji fond za '+wz.year+'. <button type="button" class="btn small" data-leave-grant="'+esc(e.id)+'">Odredi godišnji fond</button></div>';
+  else if(!ri){const bl=lvBalance(e,Number(wz.year));sum='<div class="lv-sum">Ukupno za odmor: <b>'+fmtN(bl.total)+'</b> · iskorišćeno '+bl.used+' · planirano '+bl.planned+' · <b>preostalo '+fmtN(bl.remaining)+'</b>. Izaberi period u kalendaru.</div>'}
+  else{
+   const bad=ri.error||ri.conflicts.length||ri.dup.length||ri.after<0||ri.overGrant!=null;
+   sum='<div class="lv-sum'+(bad?' bad':'')+'">Period: <b>'+dl(wz.from)+' – '+dl(wz.to||wz.from)+'</b> · radnih dana odmora: <b>'+ri.days.length+'</b> · preostalo poslije: <b>'+fmtN(ri.after)+'</b> od '+fmtN(lvBalance(e,Number(wz.year)).total)+
+    (ri.error?'<ul><li>'+esc(ri.error)+'</li></ul>':'')+
+    ((ri.conflicts.length||ri.dup.length||ri.after<0)?'<ul>'+
+     (ri.conflicts.length?'<li>Radnik je radio ili je na bolovanju/slobodan: '+ri.conflicts.slice(0,8).map(dl).join(', ')+(ri.conflicts.length>8?' …':'')+'. Izaberi drugi period ili prvo ispravi evidenciju.</li>':'')+
+     (ri.dup.length?'<li>Već je godišnji (drugo rješenje ili ručni GO): '+ri.dup.slice(0,8).map(dl).join(', ')+'.</li>':'')+
+     (ri.after<0?'<li>Izabrano je više dana nego što je preostalo.</li>':'')+'</ul>':'')+
+    (ri.overGrant!=null&&ri.after>=0?'<ul><li>Jedno rješenje za '+wz.year+'. može obuhvatiti najviše '+ri.overGrant+' dana iz prava za tu godinu. Preneseni dani se troše automatski do roka prenosa.</li></ul>':'')+
+    '<div class="lv-hint">Broje se samo radni dani prema radnoj sedmici radnika ('+(g.weekdays?.length===6?'6':'5')+' dana); nedjelje i neradni praznici se ne broje.</div></div>';
+  }
+  document.getElementById('wzSum').innerHTML=sum;
+  const info=document.getElementById('wzEmpInfo');
+  if(info)info.innerHTML=e?(esc(locName(assigned(e,today())||e.defaultLocationId))+' · zaposlen od '+esc(dl(e.hiredAt)||'—')+(g?' · pravo '+wz.year+'.: <b>'+g.days+'</b> dana':'')):'';
+  // obavještenje o roku dostave
+  const deliv=f.elements.deliveredAt.value,notice=wz.from&&deliv?Math.round((new Date(wz.from+'T12:00:00Z')-new Date(deliv+'T12:00:00Z'))/86400000):99;
+  document.getElementById('wzShort').style.display=notice<30?'flex':'none';
+  document.getElementById('wzPaper').innerHTML=rjHtml(decisionDraft(),f.elements.jmb.value).replace('class="rj-page"','class="rj-page rj-mark"');
+ }
+ function openWizard(empId){
+  ensureV2();
+  const active=S.employees.filter(e=>!e.isTest&&!e.hidden&&e.active!==false).sort((a,b)=>a.name.localeCompare(b.name,'bs'));
+  const start=empId||leaveEmployeeId||active[0]?.id;
+  const t=today();
+  wz={empId:start,year:leaveYear,from:'',to:'',month:t.slice(0,7)};
+  const e=wzEmployee()||{};
+  const yearDecs=S.leaveDecisions.filter(x=>Number(x.year)===Number(leaveYear)).length;
+  modal('Novo rješenje o godišnjem odmoru',
+   '<form id="leaveDecisionForm" class="lv-wiz" autocomplete="off">'+
+   '<div>'+
+    '<input type="hidden" name="empId" value="'+esc(start||'')+'"><input type="hidden" name="year" value="'+esc(leaveYear)+'"><input type="hidden" name="from"><input type="hidden" name="to"><textarea name="excluded" hidden></textarea>'+
+    '<section class="lv-step"><h3><em>1</em>Radnik</h3><div class="lv-row"><div><label>Radnik koji ide na godišnji</label><select data-wz-emp="1">'+active.map(x=>'<option value="'+esc(x.id)+'"'+(x.id===start?' selected':'')+'>'+esc(x.name)+'</option>').join('')+'</select></div>'+
+    '<div><label>Godina prava na odmor</label><input type="number" data-wz-year="1" min="2000" max="2100" value="'+esc(leaveYear)+'"></div></div><div class="lv-emp-info" id="wzEmpInfo"></div></section>'+
+    '<section class="lv-step"><h3><em>2</em>Period odmora</h3><div id="wzCal"></div><div id="wzSum"></div></section>'+
+    '<section class="lv-step"><h3><em>3</em>Podaci za rješenje</h3><div class="lv-row">'+
+     '<div><label>Radno mjesto</label><input name="position" value="'+esc(e.position||'')+'" placeholder="npr. Prodavac"></div>'+
+     '<div><label>Mjesto (prebivalište)</label><input name="residence" value="'+esc(e.residence||'')+'" placeholder="npr. Bar"></div>'+
+     '<div><label>Radni odnos</label><select name="contract"><option value="na određeno vrijeme"'+(e.contract==='na neodređeno vrijeme'?'':' selected')+'>na određeno vrijeme</option><option value="na neodređeno vrijeme"'+(e.contract==='na neodređeno vrijeme'?' selected':'')+'>na neodređeno vrijeme</option></select></div>'+
+     '<div><label>JMB (ne čuva se u programu)</label><input name="jmb" maxlength="25" inputmode="numeric"></div>'+
+     '<div><label>Broj rješenja</label><input name="number" required maxlength="60" value="'+esc((yearDecs+1)+'/'+leaveYear)+'"></div>'+
+     '<div><label>Datum donošenja</label><input type="date" name="issuedAt" required value="'+t+'"></div>'+
+     '<div><label>Datum dostave zaposlenom</label><input type="date" name="deliveredAt" required value="'+t+'"></div>'+
+    '</div><label class="lv-short" id="wzShort" style="display:none"><input type="checkbox" name="shortNotice"><span>Rješenje se dostavlja <b>manje od 30 dana</b> prije početka odmora. Označi ako postoji saglasnost zaposlenog i poslodavca.</span></label></section>'+
+    '<div class="modalfoot"><button type="button" class="btn" data-act="close-modal">Odustani</button><button class="btn primary lv-new" type="submit">Izdaj rješenje i rezerviši dane</button></div>'+
+   '</div>'+
+   '<aside class="lv-preview"><div class="cap">Pregled rješenja (žuto = automatski popunjeno)</div><div class="lv-paper" id="wzPaper"></div></aside>'+
+   '</form>');
+  paint();
+ }
+ window.balkanOpenLeaveWizard=openWizard;
+ function refill(){
+  const e=wzEmployee(),f=document.getElementById('leaveDecisionForm');if(!f||!e)return;
+  f.elements.empId.value=e.id;f.elements.position.value=e.position||'';f.elements.residence.value=e.residence||'';
+  f.elements.contract.value=e.contract==='na neodređeno vrijeme'?'na neodređeno vrijeme':'na određeno vrijeme';f.elements.jmb.value='';
+ }
+ const modalRoot=document.getElementById('modal');
+ modalRoot.addEventListener('click',ev=>{
+  if(!wz||!document.getElementById('wzCal'))return;
+  const day=ev.target.closest('[data-wz-day]'),nav=ev.target.closest('[data-wz-month]');
+  if(day){ev.preventDefault();ev.stopImmediatePropagation();const d=day.dataset.wzDay;
+   if(!wz.from||wz.to||d<wz.from){wz.from=d;wz.to=''}else wz.to=d;paint();return}
+  if(nav){ev.preventDefault();ev.stopImmediatePropagation();const [y,m]=wz.month.split('-').map(Number),x=new Date(y,m-1+Number(nav.dataset.wzMonth),1);wz.month=x.getFullYear()+'-'+two(x.getMonth()+1);paint()}
+ },true);
+ modalRoot.addEventListener('change',ev=>{
+  if(!wz||!document.getElementById('wzCal'))return;
+  if(ev.target.matches('[data-wz-emp]')){wz.empId=ev.target.value;wz.from='';wz.to='';refill();paint();return}
+  if(ev.target.matches('[data-wz-year]')){wz.year=Number(ev.target.value)||leaveYear;paint();return}
+  paint();
+ });
+ modalRoot.addEventListener('input',ev=>{if(wz&&document.getElementById('wzCal')&&ev.target.closest('#leaveDecisionForm'))paint()});
+ document.addEventListener('submit',ev=>{
+  const f=ev.target;if(f.id!=='leaveDecisionForm'||!document.getElementById('wzCal'))return;
+  if(!wz.from){ev.preventDefault();ev.stopImmediatePropagation();alert('Izaberi period odmora u kalendaru: klikni prvi, pa posljednji dan.');return}
+  jmbCache={empId:f.elements.empId.value,jmb:f.elements.jmb.value||''};
+ },true);
+ document.getElementById('app').addEventListener('click',ev=>{
+  const b=ev.target.closest('[data-leave-new]');if(!b)return;
+  ev.preventDefault();ev.stopImmediatePropagation();
+  if(!unlocked)return alert('Samo administrator može izdavati rješenja.');
+  openWizard(b.dataset.leaveNew||leaveEmployeeId);
+ },true);
+
+ // ---------------- JEDAN DOSLJEDAN OBRAČUN ----------------
+ // Ukupno za odmor = pravo za godinu + važeći prenos iz prethodne godine
+ // Preostalo       = ukupno − iskorišćeno − planirano (odobreno unaprijed)
+ // Nije radio (N)  = radni dani bez prijave od početka evidencije; NE oduzima se od godišnjeg.
+ function evidenceStart(e,y){
+  const ins=S.events.filter(v=>v.empId===e.id).map(v=>dateOfEvent(v.at));
+  const ovs=S.overrides.filter(o=>o.empId===e.id&&['P','N','IA'].includes(o.status)).map(o=>o.date);
+  const cands=[e.attendanceFrom,...ins,...ovs].filter(Boolean).sort();
+  if(!cands.length)return null;
+  let start=cands[0];
+  const jan=ymd(y,1,1);if(start<jan)start=jan;
+  if(e.hiredAt&&start<e.hiredAt)start=e.hiredAt;
+  return start;
+ }
+ function absentDays(e,y){
+  const start=evidenceStart(e,y);if(!start)return [];
+  const end=[today(),ymd(y,12,31)].sort()[0],scanned=new Set(S.events.filter(v=>v.empId===e.id&&v.kind==='in').map(v=>dateOfEvent(v.at)));
+  const out=[];
+  for(let x=new Date(start+'T12:00:00Z');;x.setUTCDate(x.getUTCDate()+1)){
+   const d=x.toISOString().slice(0,10);if(d>=end)break;
+   if(scanned.has(d)||!employeeAt(e,d))continue;
+   const loc=assigned(e,d);if(!loc||!isWorking(loc,d))continue;
+   const st=dayStatus(e,d,loc);if(st==='N'||st==='IA')out.push(d);
+  }
+  return out;
+ }
+ function lvBalance(e,year){
+  const y=Number(year),s=yearLeaveSummary(e,y);
+  const quota=s.quota==null?null:Number(s.quota),used=Number(s.used)||0,planned=Number(s.planned)||0;
+  const carry=Number(s.carry)||0,carryUsable=(Number(s.carryUsed)||0)+(Number(s.carryActive)||0)+Math.min(0,carry);
+  const total=quota==null?null:quota+carryUsable;
+  return {quota,carry,carryUsable,carryExpired:Number(s.carryExpired)||0,carryDeadline:s.carryDeadline,
+   total,used,planned,absent:absentDays(e,y).length,remaining:total==null?null:total-used-planned,
+   accrued:s.accrued,confirmed:!!s.rightConfirmed,carryKnown:s.carryKnown};
+ }
+ window.balkanLeaveBalance=lvBalance;
+ const fmtN=v=>v==null?'—':String(v);
+ // Tabela svih radnika: iste kolone i isti brojevi kao kartica radnika.
+ balkanLiveLeaveSummary=function(year=leaveYear){
+  const y=Number(year);
+  const visible=S.employees.slice().filter(e=>showAllStaff||(!e.hidden&&!e.isTest&&e.active!==false)).sort((a,b)=>a.name.localeCompare(b.name,'bs'));
+  const rows=visible.map(e=>{
+   const b=lvBalance(e,y);
+   return '<tr'+(e.id===leaveEmployeeId?' class="lv-sel"':'')+'><td><button class="btn small" data-leave-emp="'+esc(e.id)+'">'+esc(e.name)+'</button></td>'+
+    '<td>'+fmtN(b.quota)+'</td><td>'+(b.carry?(b.carry>0?'+':'')+b.carry+(b.carryExpired?' <small>(isteklo '+b.carryExpired+')</small>':''):'0')+'</td>'+
+    '<td><b>'+fmtN(b.total)+'</b></td><td class="lv-u">'+b.used+'</td><td class="lv-p">'+b.planned+'</td><td class="lv-n">'+b.absent+'</td>'+
+    '<td><b class="lv-rem'+(b.remaining<0?' bad':'')+'">'+fmtN(b.remaining)+'</b></td>'+
+    '<td><small>'+(b.confirmed?'Potvrđen fond':'Procjena – potvrdi pravo')+'</small></td></tr>';
+  }).join('');
+  return '<section class="panel" id="balkanLiveLeaveSummary"><div class="panel-head"><h2>Svi radnici – godišnji odmor '+y+'.</h2><span class="smalltext">stanje na dan '+esc(dl(today()))+'</span></div>'+
+   '<div class="tablewrap"><table class="simpletable lv-table"><thead><tr><th>Radnik</th><th>Pravo '+y+'</th><th>Prenos iz '+(y-1)+'</th><th>Ukupno za odmor</th><th>Iskorišćeno</th><th>Planirano</th><th>Nije radio (N)</th><th>Preostalo</th><th>Status</th></tr></thead><tbody>'+
+   (rows||'<tr><td colspan="9">Nema radnika u ovom prikazu.</td></tr>')+'</tbody></table></div>'+
+   '<p class="smalltext"><b>Ukupno za odmor</b> = pravo + važeći prenos (rok 30. jun). <b>Preostalo</b> = ukupno − iskorišćeno − planirano. <b>Nije radio (N)</b> su radni dani bez prijave od početka evidencije: ne troše godišnji odmor. Dan postaje godišnji samo kada ga označiš kao GO ili izdaš rješenje.</p></section>';
+ };
+ function explainSection(e){
+  const b=lvBalance(e,leaveYear),y=Number(leaveYear);
+  return '<section class="panel" id="balkanAnnualToday"><h2>Kako je izračunato – '+esc(e.name)+'</h2>'+
+   '<div class="lv-calc">'+
+    '<div><span>Pravo za '+y+'.</span><b>'+fmtN(b.quota)+'</b></div><em>+</em>'+
+    '<div><span>Prenos iz '+(y-1)+'.</span><b>'+b.carryUsable+'</b></div><em>=</em>'+
+    '<div class="tot"><span>Ukupno za odmor</span><b>'+fmtN(b.total)+'</b></div><em>−</em>'+
+    '<div><span>Iskorišćeno</span><b>'+b.used+'</b></div><em>−</em>'+
+    '<div><span>Planirano</span><b>'+b.planned+'</b></div><em>=</em>'+
+    '<div class="rem"><span>Preostalo</span><b>'+fmtN(b.remaining)+'</b></div>'+
+   '</div>'+
+   '<p class="smalltext">Nije radio (N): <b>'+b.absent+'</b> dana u '+y+'. Ti dani se <b>ne oduzimaju</b> od godišnjeg. Ako je radnik tada stvarno bio na odmoru, potvrdi ih ispod u „Provjera neoznačenih dana“ ili klikom u kalendaru (N → P → GO).'+
+   (b.carryExpired?' Preneseni dani kojima je istekao rok ('+b.carryExpired+') se ne računaju.':'')+
+   (b.accrued!=null&&y===Number(today().slice(0,4))?' Srazmjerno ostvareno do danas (informativno): '+b.accrued+' dana.':'')+'</p></section>';
+ }
+ // ---------------- NOVI IZGLED STRANICE ----------------
+ function yearCalendar(e,y){
+  const months=[];
+  const has=new Set([...S.events.filter(v=>v.empId===e.id).map(v=>dateOfEvent(v.at).slice(0,7)),...S.overrides.filter(o=>o.empId===e.id).map(o=>o.date.slice(0,7))]);
+  for(let m=1;m<=12;m++){
+   const n=new Date(y,m,0).getDate(),lead=(new Date(y,m-1,1).getDay()+6)%7;let cells='';
+   const noData=!has.has(y+'-'+two(m)); // mjesec bez ijedne evidencije: ne prikazujemo kao izostanak
+   for(let i=0;i<lead;i++)cells+='<span class="x"></span>';
+   for(let d=1;d<=n;d++){const date=y+'-'+two(m)+'-'+two(d),st=statusAt(e,date);cells+='<span class="'+(st==='out'?'x':(noData&&st==='N')?'':st)+'" title="'+esc(dl(date)+' · '+(st==='out'?'van radnog odnosa':statusText(st)))+'"></span>'}
+   months.push('<div class="lv-mini"><h4>'+MON[m-1]+'</h4><div class="g">'+cells+'</div></div>');
+  }
+  return months.join('');
+ }
+ const _prevLeavePage=leavePage;
+ leavePage=function(){
+  const old=_prevLeavePage();
+  const tpl=document.createElement('template');tpl.innerHTML=old;
+  const pick=sel=>{const n=tpl.content.querySelector(sel);return n?n.outerHTML:''};
+  const toolbar=[...tpl.content.querySelectorAll('.panel')].find(p=>p.querySelector('[data-leave-field=employee]'));
+  const review=[...tpl.content.querySelectorAll('section.panel')].find(p=>p.querySelector('[data-leave-review]'));
+  toolbar?.querySelectorAll('[data-leave-new],[data-leave-grant]').forEach(x=>x.remove());
+  if(review){const p=review.querySelector('p'),n=(()=>{try{return likelyLeaveReviewDays(S.employees.find(x=>x.id===leaveEmployeeId),leaveYear).length}catch{return 0}})();
+   review.querySelector('h2').textContent='Provjera neoznačenih dana (N)';
+   if(p)p.innerHTML='<b>'+n+' radnih dana</b> bez prijave (N). Oni se <b>ne računaju</b> kao godišnji odmor. Ako je radnik tih dana stvarno bio na odmoru, ovdje ih možeš pojedinačno potvrditi kao GO.'}
+  const e=S.employees.find(x=>x.id===leaveEmployeeId);
+  let hero='';
+  if(e){
+   const bal=lvBalance(e,leaveYear),g=leaveGrant(e.id,Number(leaveYear))||(bal.quota!=null?{days:bal.quota}:null),total=bal.total||0;
+   const used=bal.used,up=bal.planned,rem=bal.remaining;
+   const pct=x=>total?Math.min(100,Math.round(x/total*100)):0;
+   const decs=S.leaveDecisions.filter(x=>x.empId===e.id&&Number(x.year)===Number(leaveYear)).sort((a,b)=>String(b.issuedAt).localeCompare(String(a.issuedAt)));
+   const list=decs.map(d=>'<div class="lv-dec'+(d.status==='issued'?'':' cx')+'"><span class="no">'+esc(d.number)+'</span><div><div class="per">'+esc(dl(d.from))+' – '+esc(dl(d.to))+' · '+d.days.length+' radnih dana</div><div class="meta">Doneseno '+esc(dl(d.issuedAt))+' · dostavljeno '+esc(dl(d.deliveredAt))+(d.status==='issued'?'':' · STORNIRANO: '+esc(d.cancelledReason||''))+'</div></div>'+
+    '<div class="actionline"><button class="btn small primary" data-leave-print="'+esc(d.id)+'">Pregled / štampa</button><button class="btn small" data-leave-doc="'+esc(d.id)+'">Word (.docx)</button>'+(d.status==='issued'?'<button class="btn small danger" data-leave-cancel="'+esc(d.id)+'">Storniraj</button>':'')+'</div></div>').join('');
+   hero='<section class="lv-hero">'+
+    '<div class="panel lv-person"><div><h2>'+esc(e.name)+'</h2><div class="sub">'+esc(e.position||'Radno mjesto nije upisano')+' · '+esc(locName(assigned(e,today())||e.defaultLocationId))+' · '+esc(e.contract||'vrsta ugovora nije upisana')+'</div></div>'+
+     (g?'<div class="lv-bar" title="Iskorišćeno / odobreno unaprijed / preostalo"><i class="u" style="width:'+pct(used)+'%"></i><i class="r" style="width:'+pct(up)+'%"></i></div>':'<div class="note">Godišnji fond za '+leaveYear+'. još nije utvrđen. Klikni „Odredi godišnji fond“.</div>')+
+     '<div class="lv-nums">'+
+      '<div class="lv-num"><b>'+fmtN(bal.quota)+'</b><span>Pravo '+leaveYear+'.</span></div>'+
+      (bal.carryUsable?'<div class="lv-num"><b>'+(bal.carryUsable>0?'+':'')+bal.carryUsable+'</b><span>Prenos iz '+(Number(leaveYear)-1)+'.</span></div>':'')+
+      '<div class="lv-num tot"><b>'+fmtN(bal.total)+'</b><span>Ukupno za odmor</span></div>'+
+      '<div class="lv-num g"><b>'+used+'</b><span>Iskorišćeno</span></div>'+
+      '<div class="lv-num bl"><b>'+up+'</b><span>Planirano</span></div>'+
+      '<div class="lv-num rd"><b>'+bal.absent+'</b><span>Nije radio (N)</span></div>'+
+      '<div class="lv-num or" style="grid-column:span '+(bal.carryUsable?2:3)+'"><b>'+fmtN(rem)+'</b><span>Preostalo</span></div></div>'+
+      '<div class="lv-hint">Dani kada nije radio (N) ne troše godišnji odmor.</div>'+
+     '<div class="lv-actions"><button class="btn primary lv-new" data-leave-new="'+esc(e.id)+'">+ Novo rješenje za '+esc(e.name.split(' ')[0])+'</button><button class="btn" data-leave-grant="'+esc(e.id)+'">⚙ Odredi godišnji fond</button></div></div>'+
+    '<div class="panel"><h2 style="margin-top:0">Godina '+leaveYear+'. – kada je radio, a kada bio na odmoru</h2><div class="lv-year">'+yearCalendar(e,Number(leaveYear))+'</div>'+
+     '<div class="lv-legend"><span><i style="background:#bfe6d1"></i>Radio</span><span><i style="background:#2a62b8"></i>Godišnji odmor</span><span><i style="background:#f5c3cb"></i>Nije radio</span><span><i style="background:#a68ad9"></i>Bolovanje</span><span><i style="background:#7ccbb1"></i>Praznik</span><span><i style="background:#f1f3f7"></i>Nema evidencije / budući dan</span></div></div>'+
+    '</section>'+
+    '<section class="panel"><div class="panel-head"><h2>Rješenja – '+esc(e.name)+' · '+leaveYear+'.</h2></div><div class="lv-decs">'+(list||'<div class="lv-empty">Još nema rješenja za ovu godinu. <button class="btn small primary" data-leave-new="'+esc(e.id)+'">+ Novo rješenje</button></div>')+'</div></section>';
+  }
+  return pageTitle('Godišnji odmori','Pravo, korišćenje i rješenja o godišnjem odmoru',
+    '<button class="btn" data-leave-template="1">✎ Šablon rješenja</button><button class="btn primary lv-new" data-leave-new="'+esc(e?.id||'')+'">+ Novo rješenje</button>')+
+   syncStatus()+
+   '<div class="lv-wrap">'+(toolbar?toolbar.outerHTML.replace('class="panel"','class="panel lv-toolbar-panel"'):'')+hero+
+   pick('#balkanLiveLeaveSummary')+(e?explainSection(e):pick('#balkanAnnualToday'))+(review?review.outerHTML:'')+pick('#balkanAnnualBulk')+
+   '<p class="lv-legal"><b>Zakonski podsjetnik:</b> potrebni su plan godišnjih odmora, uredno uručeno rješenje i pravilno obračunati radni dani. Program pomaže evidenciji, ali ne potvrđuje sam pravnu usklađenost.</p></div>';
+ };
+})();
+
+// ===================== ZAKONSKA USKLAĐENOST – Zakon o radu CG (19.10.2026.) =====================
+(function(){
+ // 1) Državni praznici CG koji su neradni dani (Zakon o državnim i drugim praznicima; Njegošev dan od 2025).
+ //    Čl. 80 st. 4 Zakona o radu: praznici koji su neradni dani ne uračunavaju se u godišnji odmor.
+ function cgStateHolidays(y){
+  const L=[['Nova godina','01-01','01-02'],['Praznik rada','05-01','05-02'],['Dan nezavisnosti','05-21','05-22'],['Dan državnosti','07-13','07-14']];
+  if(y>=2025)L.push(['Njegošev dan','11-13','11-14']);
+  // Praznici se praznuju dva dana. Ako je prvi dan nedjelja, neradna su dva naredna dana;
+  // ako je drugi dan nedjelja, neradan je i prvi naredni dan.
+  const sun=d=>new Date(d+'T12:00:00Z').getUTCDay()===0,next=(d,n)=>{const x=new Date(d+'T12:00:00Z');x.setUTCDate(x.getUTCDate()+n);return x.toISOString().slice(0,10)};
+  return L.map(([label,a,b])=>{const date=y+'-'+a;let end=y+'-'+b;
+   if(sun(date))end=next(date,2);else if(sun(end))end=next(end,1);
+   return {label,date,endDate:end}});
+ }
+ function missingStateHolidays(y){
+  return cgStateHolidays(y).filter(h=>!(S.holidays||[]).some(x=>x.paid&&!x.employeeId&&x.date<=h.date&&(x.endDate||x.date)>=h.endDate));
+ }
+ window.balkanMissingStateHolidays=missingStateHolidays;
+ const _absences=absences;
+ absences=function(){
+  const html=_absences(),y=new Date().getFullYear();
+  const rows=[y,y+1].map(yy=>{const miss=missingStateHolidays(yy);
+   return '<div class="actionline" style="margin:6px 0"><b>'+yy+'.</b> '+(miss.length?'<span class="badge N">Nedostaje: '+miss.map(h=>esc(h.label)).join(', ')+'</span><button class="btn small primary" type="button" data-cg-holidays="'+yy+'">Dodaj državne praznike CG za '+yy+'.</button>':'<span class="badge P">Svi državni praznici su uneseni</span>')+'</div>'}).join('');
+  const panel='<section class="panel" id="cgHolidays"><h2>Državni praznici Crne Gore</h2><p class="smalltext">Neradni dani: Nova godina (1–2.1.), Praznik rada (1–2.5.), Dan nezavisnosti (21–22.5.), Dan državnosti (13–14.7.) i Njegošev dan (13–14.11.). Ne troše godišnji odmor i ne broje se kao izostanak. Vjerske praznike i pomjerene neradne dane (npr. kad praznik padne u nedjelju) dodaj posebno, prema odluci Vlade.</p>'+rows+'</section>';
+  return html.replace('<div class="panel"><h2>Praznici i posebni dani</h2>',panel+'<div class="panel"><h2>Praznici i posebni dani</h2>');
+ };
+ document.getElementById('app').addEventListener('click',async ev=>{
+  const b=ev.target.closest('[data-cg-holidays]');if(!b)return;
+  ev.preventDefault();ev.stopImmediatePropagation();if(!unlocked)return;
+  const y=Number(b.dataset.cgHolidays),miss=missingStateHolidays(y);if(!miss.length)return;
+  if(!confirm('Dodati državne praznike Crne Gore za '+y+'.?\n\n'+miss.map(h=>h.label+': '+h.date.slice(8)+'.'+h.date.slice(5,7)+'. – '+h.endDate.slice(8)+'.'+h.endDate.slice(5,7)+'.').join('\n')+'\n\nVrijede za sve objekte i sve radnike, kao plaćeni neradni dani.'))return;
+  for(const h of miss)S.holidays.push({id:uid(),date:h.date,endDate:h.endDate,type:'state',label:h.label,locationId:null,employeeId:null,paid:true});
+  audit('Dodati državni praznici CG',y+': '+miss.map(h=>h.label).join(', '));
+  try{await save();render()}catch(err){alert('Nije sačuvano: '+err.message)}
+ },true);
+
+ // 2) Čl. 79 st. 3–4: 1/12 godišnjeg odmora za svaki ZAPOČETI mjesec rada u godini zasnivanja/prestanka
+ //    radnog odnosa; najmanje pola dana zaokružuje se na cijeli dan.
+ annualEntitlementSuggestion=function(employee,year,daysPerWeek=5,cutoff=''){
+  const base=daysPerWeek===6?24:20,first=String(year)+'-01-01',last=String(year)+'-12-31';
+  if(!employee)return {days:0,months:0,base,known:false};
+  const hired=employee.hiredAt&&employee.hiredAt.length===10?employee.hiredAt:'';
+  const terminated=employee.terminatedAt&&employee.terminatedAt.length===10?employee.terminatedAt:'';
+  if(!hired)return {days:base,months:12,base,known:false};
+  const start=hired>first?hired:first,end=[last,terminated||last,cutoff||last].sort()[0];
+  if(start>end)return {days:0,months:0,base,known:true};
+  let months=0;
+  for(let m=1;m<=12;m++){const from=ymd(year,m,1),to=ymd(year,m,new Date(year,m,0).getDate());if(to<start||from>end)continue;months++}
+  return {days:Math.floor(base*months/12+0.5),months,base,known:true};
+ };
+
+ // 3) Upozorenja u obrascu za rješenje (čl. 85 st. 3).
+ const legalHints=()=>{
+  const sum=document.getElementById('wzSum'),f=document.getElementById('leaveDecisionForm');
+  if(!sum||!f)return;
+  if(!f.elements.from.value){document.getElementById('wzLegal')?.remove();return}
+  const empId=f.elements.empId.value,year=Number(f.elements.year.value),from=f.elements.from.value,to=f.elements.to.value||from;
+  const g=leaveGrant(empId,year);if(!g)return;
+  let days=[];try{days=leaveDays(from,to,g.weekdays,[],empId)}catch{return}
+  const notes=[];
+  const earlier=(S.leaveDecisions||[]).filter(x=>x.empId===empId&&Number(x.year)===year&&x.status==='issued');
+  const longest=earlier.reduce((m,x)=>Math.max(m,(x.days||[]).length),0);
+  if(days.length&&days.length<g.days&&days.length<10&&longest<10)
+   notes.push('Ako se odmor koristi u dijelovima, <b>prvi dio mora trajati najmanje 10 radnih dana neprekidno</b> u toku kalendarske godine (čl. 85 st. 3). Ovo bi bio dio od '+days.length+' dana, a radnik još nema dio od 10 dana.');
+  if(to>(year+1)+'-06-30')notes.push('Ostatak odmora za '+year+'. treba iskoristiti <b>najkasnije do 30.6.'+(year+1)+'.</b> (čl. 85 st. 3), osim zbog bolovanja ili porodiljskog odsustva (čl. 85 st. 4–5).');
+  if(from.slice(0,4)<String(year))notes.push('Period počinje prije godine za koju se odobrava odmor.');
+  let box=document.getElementById('wzLegal');
+  if(!box){box=document.createElement('div');box.id='wzLegal';sum.after(box)}
+  box.innerHTML=notes.length?'<div class="lv-sum" style="background:#fff7e6;color:#5c4300;margin-top:8px"><b>Zakonska provjera:</b><ul>'+notes.map(n=>'<li>'+n+'</li>').join('')+'</ul></div>':'';
+ };
+ // capture na nivou dokumenta: obrazac zaustavlja klikove u #modal, a provjera se izvršava poslije njegovog crtanja
+ document.addEventListener('click',ev=>{if(ev.target.closest?.('#modal'))setTimeout(legalHints,0)},true);
+ document.addEventListener('change',ev=>{if(ev.target.closest?.('#modal'))setTimeout(legalHints,0)},true);
+
+ // 4) Upozorenje na stranici Godišnji odmori ako praznici nisu uneseni.
+ const _lp=leavePage;
+ leavePage=function(){
+  const html=_lp(),y=Number(leaveYear),miss=missingStateHolidays(y);
+  if(!miss.length)return html;
+  return html.replace('<div class="lv-wrap">','<div class="note" style="margin-bottom:12px"><b>Pažnja:</b> za '+y+'. nisu uneseni državni praznici ('+miss.map(h=>esc(h.label)).join(', ')+'). Dok ih ne dodaš, ti dani se mogu pogrešno računati kao godišnji odmor ili izostanak. Dodaj ih u <b>Praznici i odsustva</b> jednim klikom.</div><div class="lv-wrap">');
  };
 })();
 
@@ -2284,4 +3036,4 @@ window.BALKAN_V6={
  backup:()=>doExport(),
  defaultState:()=>defaultState()
 };
-</script><script type="module" src="./admin-firebase.js?v=20261019ean8"></script></body></html>
+</script><script type="module" src="./admin-firebase.js?v=20261019del9"></script></body></html>

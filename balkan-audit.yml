@@ -1,0 +1,89 @@
+name: BALKAN browser audit
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'admin.html'
+      - 'admin-firebase.js'
+      - 'history-2025.js'
+      - 'kiosk.js'
+      - 'kiosk-firebase.js'
+      - 'sw.js'
+      - 'index.html'
+      - 'tests/**'
+      - '.github/workflows/balkan-audit.yml'
+  pull_request:
+    branches: [main]
+    paths:
+      - 'admin.html'
+      - 'admin-firebase.js'
+      - 'kiosk.js'
+      - 'kiosk-firebase.js'
+      - 'index.html'
+      - 'sw.js'
+      - 'tests/**'
+      - '.github/workflows/balkan-audit.yml'
+  workflow_dispatch:
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: JavaScript syntax validation
+        run: |
+          node --check --input-type=module < admin-firebase.js
+          node --check --input-type=module < history-2025.js
+          node --check --input-type=module < kiosk.js
+          node --check --input-type=module < kiosk-firebase.js
+          node --check sw.js
+          node --check --input-type=module < firebase-shared.js
+          node --check --input-type=module < firebase-config.js
+          python3 - <<'PY'
+          import re
+          src=open('admin.html').read()
+          scripts=re.findall(r'<script(?:\s[^>]*)?>([\s\S]*?)</script>',src)
+          assert scripts,'Inline script missing'
+          open('/tmp/balkan-inline.js','w').write('\n'.join(scripts))
+          print('Inline scripts:',len(scripts))
+          PY
+          node --check /tmp/balkan-inline.js
+          node tests/annual-leave-accrual-regression.mjs
+      - name: Install Playwright
+        run: |
+          npm install --no-save playwright@1.56.1
+          npx playwright install --with-deps chromium
+          pip install zxing-cpp pillow
+      - name: Browser smoke tests
+        run: |
+          python3 -m http.server 8765 >/tmp/balkan-http.log 2>&1 &
+          sleep 2
+          node tests/smoke.mjs
+          TEST_MOBILE=1 node tests/smoke.mjs
+          node tests/firebase-mock-browser.mjs
+          node tests/kiosk-real-scenarios-browser.mjs
+          node tests/admin-live-scans-browser.mjs
+          node tests/admin-calendar-quick-browser.mjs
+          node tests/admin-scan-delete-browser.mjs
+          node tests/leave-wizard-browser.mjs
+          node tests/leave-balance-browser.mjs
+          node tests/law-compliance-browser.mjs
+          node tests/kiosk-receipt-browser.mjs
+          node tests/launch-kiosk-browser.mjs
+          node tests/kiosk-fast-sync-browser.mjs
+          node tests/calculations.mjs
+          node tests/shifts-leave-dashboard.mjs
+          node tests/lateness-color-dashboard.mjs
+          node tests/clock-24h.mjs
+          node tests/sick-leave-open-ended.mjs
+          node tests/vacation-law-cards.mjs
+          node tests/seasonal-schedule-annual-browser.mjs
+          node tests/workers-leave-layout-browser.mjs
+          node tests/worker-cards-bulk-browser.mjs
+          node tests/worker-cards-ean13-browser.mjs
+          node tests/launch-kiosk-browser.mjs
+          node tests/kiosk-receipt-browser.mjs
+          node tests/kiosk-fast-sync-browser.mjs
