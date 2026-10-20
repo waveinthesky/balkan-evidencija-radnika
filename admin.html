@@ -2514,6 +2514,10 @@ SYNC_NAMES.push('scanTrash');
 .lv-box.carry.pos b{color:#1f7a55}.lv-box.carry.neg b{color:#b42a40}
 .lv-box.rem{background:#fff6ec;border-color:#f3d2a8;min-width:150px}.lv-box.rem b{color:#b45d0d;font-size:36px}
 .lv-box.rem.bad{background:#fdecee;border-color:#eaa2ad}.lv-box.rem.bad b{color:#a61f33}
+.lv-sep{width:1px;align-self:stretch;background:#d5dde8;margin:0 6px}
+.lv-box.abs{background:#fdf0f2;border-color:#f1c4cc}.lv-box.abs b{color:#b42a40}
+.lv-box.after{background:#f4f0fd;border-color:#d6c8f3;min-width:170px}.lv-box.after b{color:#5b3fa0;font-size:36px}
+.lv-box.after.bad{background:#fdecee;border-color:#eaa2ad}.lv-box.after.bad b{color:#a61f33}
 .lv-absent{font-size:14px;color:#5d6b80}.lv-absent b{color:#b42a40}
 .lv-carry h2{margin-top:0}
 .lv-cbig{font-size:44px;font-weight:800;line-height:1;font-variant-numeric:tabular-nums;color:#33445e}
@@ -3012,9 +3016,12 @@ SYNC_NAMES.push('scanTrash');
       box('carry '+(bal.carryUsable>0?'pos':bal.carryUsable<0?'neg':''),'Prenos iz '+(y-1)+'.',signed(bal.carryUsable),carrySub)+'<em>=</em>'+
       box('tot','Ukupno za odmor',fmtN(bal.total))+'<em>−</em>'+
       box('g','Iskorišćeno',bal.used)+'<em>−</em>'+box('bl','Planirano',bal.planned)+'<em>=</em>'+
-      box('rem'+(bal.remaining<0?' bad':''),'Preostalo',fmtN(bal.remaining),'dana godišnjeg')+'</div>'+
+      box('rem'+(bal.remaining<0?' bad':''),'Preostalo',fmtN(bal.remaining),'dana godišnjeg')+
+      '<i class="lv-sep" aria-hidden="true"></i>'+
+      box('abs','Nije radio/la (N)',bal.absent,(bal.absent===1?'dan':'dana')+' bez prijave')+'<em>→</em>'+
+      box('after'+(bal.remaining!=null&&bal.remaining-bal.absent<0?' bad':''),'Preostalo − Nije radio/la (N)',bal.remaining==null?'—':bal.remaining-bal.absent,'ako se N računa kao godišnji')+'</div>'+
      '<div class="lv-bar" title="Iskorišćeno / planirano / preostalo"><i class="u" style="width:'+pct(bal.used)+'%"></i><i class="r" style="width:'+pct(bal.planned)+'%"></i></div>'+
-     '<div class="lv-absent"><b>'+bal.absent+'</b> '+(bal.absent===1?'dan':'dana')+' bez prijave (N) u '+y+'. – <b>ne oduzima se</b> od godišnjeg.</div>'+
+     '<div class="lv-absent">Dani bez prijave (N) se <b>ne oduzimaju automatski</b> od godišnjeg. Ljubičasta kocka pokazuje koliko bi ostalo kada bi se tih <b>'+bal.absent+'</b> '+(bal.absent===1?'dan':'dana')+' računalo kao godišnji odmor.</div>'+
     '</section>'+
     '<section class="lv-hero">'+carryCard(e,bal,y)+
     '<div class="panel"><h2 style="margin-top:0">Godina '+y+'. – kada je radio, a kada bio na odmoru</h2><div class="lv-year">'+yearCalendar(e,y)+'</div>'+

@@ -38,7 +38,9 @@ await page.locator('select[data-leave-field=employee]').selectOption('bal');
 const hero=await page.locator('.lv-eq').innerText();
 for(const [label,n] of [['Pravo',20],['Prenos iz',  '+3'],['Ukupno za odmor',23],['Iskorišćeno',2],['Planirano',plan.planned],['Preostalo',bal.remaining]])
  assert.ok(new RegExp(label+'[^\\n]*\\n\\s*'+String(n).replace('+','\\+')+'(\\n|$)').test(hero),'Račun: '+label+' = '+n+' | '+hero);
-assert.match(await page.locator('.lv-absent').innerText(),/4 dana bez prijave \(N\)[\s\S]*ne oduzima/);
+assert.match(await page.locator('.lv-absent').innerText(),/ne oduzimaju automatski/);
+assert.match(hero,/Nije radio\/la \(N\)\n\s*4\n/,'Kocka: Nije radio/la (N) = 4 | '+hero);
+assert.ok(new RegExp('Preostalo − Nije radio\\/la \\(N\\)\\n\\s*'+(bal.remaining-4)+'\\n').test(hero),'Kocka: Preostalo − N = '+(bal.remaining-4)+' | '+hero);
 const row=await page.locator('#balkanLiveLeaveSummary tr').filter({hasText:'Obračun Testni'}).innerText();
 const cells=row.split('\t').map(x=>x.trim().split('\n')[0]);
 assert.deepEqual(cells.slice(1,8),['20','+3','23','2',String(plan.planned),String(bal.remaining),'4'],'Tabela: iste vrijednosti kao kartica | '+row);
