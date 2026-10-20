@@ -72,12 +72,9 @@ const ctx={S,today:()=> '2026-06-30',ymd:mk,dateOfEvent:at=>at.slice(0,10),
  _annualOriginalStatus:(e,date,loc)=>events.some(v=>v.at.startsWith(date))?'P':'N'};
 const calc=new Function('ctx','const {'+Object.keys(ctx).join(',')+'}=ctx;'+autoCode+
  ';return {agreedAnnualDates};')(ctx);
-assert.deepEqual(calc.agreedAnnualDates(worker,2026),missing,'Cetiri propustene prijave -> cetiri privremena GO');
+// 19.10.2026: dan bez prijave ostaje N i NE postaje automatski GO.
+assert.deepEqual(calc.agreedAnnualDates(worker,2026),[],'Cetiri propustene prijave ostaju N (nema automatskog GO)');
 S.overrides.push({empId:'w',locId:'m1',date:'2026-05-05',status:'N'});
-assert.deepEqual(calc.agreedAnnualDates(worker,2026),missing.filter(d=>d!=='2026-05-05'),'Rucno N ne postaje GO');
-S.overrides[0].status='GO';
-assert.deepEqual(calc.agreedAnnualDates(worker,2026),missing.filter(d=>d!=='2026-05-05'),'Rucni GO ne broji se opet automatski');
+assert.deepEqual(calc.agreedAnnualDates(worker,2026),[],'Rucno N ostaje N');
 S.overrides.length=0;
-worker.attendanceFrom='2026-05-06';
-assert.deepEqual(calc.agreedAnnualDates(worker,2026),['2026-05-06','2026-05-07'],'Prije pocetka pracenja nema automatskog GO');
-console.log('PASS: 12 + 2 - 4 = 10, mjeseci rada, arhivski prenos, istek roka, 4 automatska dana, rucni override');
+console.log('PASS: 12 + 2 - 4 = 10, mjeseci rada, arhivski prenos, istek roka, dani bez prijave ostaju N');

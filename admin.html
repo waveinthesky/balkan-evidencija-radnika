@@ -2502,7 +2502,33 @@ SYNC_NAMES.push('scanTrash');
 (function(){
  const CSS=`
 .lv-wrap{display:grid;gap:16px}
-.lv-hero{display:grid;grid-template-columns:minmax(0,1.25fr) minmax(0,1fr);gap:18px;align-items:stretch}
+.lv-main{display:grid;gap:14px}
+.lv-head{display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap;align-items:flex-start}
+.lv-eq{display:flex;align-items:stretch;gap:8px;flex-wrap:wrap}
+.lv-eq em{font-style:normal;font-size:24px;color:#8592a6;font-weight:700;align-self:center}
+.lv-box{border:1px solid #e3e8ef;border-radius:12px;padding:10px 14px;min-width:118px;display:flex;flex-direction:column;gap:2px}
+.lv-box span{font-size:12px;color:#5d6b80;font-weight:700}
+.lv-box b{font-size:30px;line-height:1.05;font-variant-numeric:tabular-nums}
+.lv-box small{font-size:11px;color:#5d6b80}
+.lv-box.tot{background:#f3f6fb}.lv-box.g b{color:#1f7a55}.lv-box.bl b{color:#2a62b8}
+.lv-box.carry.pos b{color:#1f7a55}.lv-box.carry.neg b{color:#b42a40}
+.lv-box.rem{background:#fff6ec;border-color:#f3d2a8;min-width:150px}.lv-box.rem b{color:#b45d0d;font-size:36px}
+.lv-box.rem.bad{background:#fdecee;border-color:#eaa2ad}.lv-box.rem.bad b{color:#a61f33}
+.lv-absent{font-size:14px;color:#5d6b80}.lv-absent b{color:#b42a40}
+.lv-carry h2{margin-top:0}
+.lv-cbig{font-size:44px;font-weight:800;line-height:1;font-variant-numeric:tabular-nums;color:#33445e}
+.lv-cbig span{font-size:14px;font-weight:600;color:#5d6b80;margin-left:8px}
+.lv-cbig.pos{color:#1f7a55}.lv-cbig.neg{color:#b42a40}
+.lv-csrc{font-size:13px;color:#5d6b80;margin:6px 0 10px}
+.lv-cr{display:flex;justify-content:space-between;gap:10px;padding:7px 0;border-bottom:1px solid #eef1f5;font-size:14px}
+.lv-cr b{font-variant-numeric:tabular-nums}.lv-cr b.pos{color:#1f7a55}.lv-cr b.neg{color:#b42a40}
+.lv-miss{color:#a8203a}
+.lv-cv{font-weight:800;font-variant-numeric:tabular-nums}.lv-cv.pos{color:#1f7a55}.lv-cv.neg{color:#b42a40}
+.lv-table td small{display:block;font-size:11px;color:#738198}.lv-table td small.lv-miss{color:#a8203a}
+.lv-banner{background:#eef3fa;border-radius:10px;padding:8px 12px;font-size:13px;margin-bottom:10px}.lv-banner.warn{background:#fff7e6;color:#5c4300}
+.lv-rules{margin:0;padding-left:20px;display:grid;gap:6px;font-size:14px;color:#33445e}
+
+.lv-hero{display:grid;grid-template-columns:minmax(0,.8fr) minmax(0,1.2fr);gap:18px;align-items:stretch}
 .lv-person{display:flex;flex-direction:column;gap:14px}
 .lv-person h2{margin:0;font-size:24px}
 .lv-person .sub{color:#5d6b80;font-size:14px;margin-top:2px}
@@ -2832,48 +2858,118 @@ SYNC_NAMES.push('scanTrash');
   }
   return out;
  }
- function lvBalance(e,year){
-  const y=Number(year),s=yearLeaveSummary(e,y);
-  const quota=s.quota==null?null:Number(s.quota),used=Number(s.used)||0,planned=Number(s.planned)||0;
-  const carry=Number(s.carry)||0,carryUsable=(Number(s.carryUsed)||0)+(Number(s.carryActive)||0)+Math.min(0,carry);
-  const total=quota==null?null:quota+carryUsable;
-  return {quota,carry,carryUsable,carryExpired:Number(s.carryExpired)||0,carryDeadline:s.carryDeadline,
-   total,used,planned,absent:absentDays(e,y).length,remaining:total==null?null:total-used-planned,
-   accrued:s.accrued,confirmed:!!s.rightConfirmed,carryKnown:s.carryKnown};
+ function carrySource(e,y,a){
+  const explicit=e.leaveCarryByYear?.[y];
+  if(explicit!=null&&explicit!=='')return {kind:'manual',text:'Ručno uneseno'+(e.leaveCarryNoteByYear?.[y]?' – '+e.leaveCarryNoteByYear[y]:'')};
+  if(y!==2026)return {kind:'none',text:'Prenos iz '+(y-1)+'. nije unesen'};
+  const A=window.BALKAN_ARCHIVE;
+  if(!A?.isLoaded?.())return {kind:'none',text:'Arhiva 2025. nije uvezena – unesi prenos ručno'};
+  if(a.provisional)return {kind:'archive',text:'Iz arhive 2025. (Excel) – nije potvrđeno'};
+  return {kind:'none',text:'Nije pronađen u arhivi 2025. pod imenom „'+e.name+'“ – unesi ručno'};
  }
+ function lvBalance(e,year){
+  const y=Number(year),s=yearLeaveSummary(e,y),a=balkanCarryAudit(e,y);
+  const quota=s.quota==null?null:Number(s.quota),used=Number(s.used)||0,planned=Number(s.planned)||0;
+  const carryUsable=a.spentOnCarry+a.active+a.negative;
+  const total=quota==null?null:quota+carryUsable;
+  return {quota,carry:a.raw,carryUsable,carrySpent:a.spentOnCarry,carryActive:a.active,carryExpired:a.expired,carryNegative:a.negative,
+   carryDeadline:a.deadline,carrySource:carrySource(e,y,a),carryKnown:a.known,
+   total,used,planned,absent:absentDays(e,y).length,remaining:total==null?null:total-used-planned,
+   accrued:s.accrued,confirmed:!!s.rightConfirmed};
+ }
+ const signed=n=>n>0?'+'+n:String(n);
+ function carryCell(b){
+  const src=b.carrySource,cls=b.carry>0?'pos':b.carry<0?'neg':'';
+  let note='';
+  if(src.kind==='none'&&!b.carry)note='<small class="lv-miss">nema podatka</small>';
+  else if(b.carry>0)note='<small>'+(b.carryExpired?'isteklo '+b.carryExpired:b.carryActive?'važi do '+dl(b.carryDeadline):'iskorišteno')+'</small>';
+  else if(b.carry<0)note='<small>umanjuje '+(Number(leaveYear))+'.</small>';
+  return '<span class="lv-cv '+cls+'" title="'+esc(src.text)+'">'+signed(b.carry)+(src.kind==='archive'?'*':'')+'</span>'+note;
+ }
+ function carryCard(e,b,y){
+  const src=b.carrySource,prev=y-1;
+  let rows='';
+  if(b.carry>0)rows='<div class="lv-cr"><span>Iskorišteno od prenosa (do '+dl(b.carryDeadline)+')</span><b>'+b.carrySpent+'</b></div>'+
+   '<div class="lv-cr"><span>Isteklo '+dl(b.carryDeadline)+' (više se ne može koristiti)</span><b class="'+(b.carryExpired?'neg':'')+'">'+b.carryExpired+'</b></div>'+
+   '<div class="lv-cr"><span>Još važi</span><b class="'+(b.carryActive?'pos':'')+'">'+b.carryActive+'</b></div>';
+  else if(b.carry<0)rows='<p>U '+prev+'. radnik je iskoristio <b>'+(-b.carry)+' '+(b.carry===-1?'dan':'dana')+' više</b> nego što je imao pravo. To se oduzima od prava za '+y+'.</p>';
+  else rows=src.kind==='none'?'<p class="lv-miss">'+esc(src.text)+'.</p>':'<p>Nema prenosa: sve iz '+prev+'. je iskorišteno.</p>';
+  return '<div class="panel lv-carry"><h2>Prenos iz '+prev+'.</h2>'+
+   '<div class="lv-cbig '+(b.carry>0?'pos':b.carry<0?'neg':'')+'">'+signed(b.carry)+'<span>'+(b.carry>0?'dana više (neiskorišteno)':b.carry<0?'dana manje (prekoračeno)':'dana')+'</span></div>'+
+   '<div class="lv-csrc">'+esc(src.text)+'</div>'+rows+
+   '<div class="lv-actions" style="margin-top:10px"><button class="btn small" type="button" data-carry-edit="'+esc(e.id)+'">✎ Uredi prenos</button>'+
+   (src.kind==='archive'?'<button class="btn small primary" type="button" data-carry-confirm="'+esc(e.id)+'">✓ Potvrdi iz arhive</button>':'')+'</div>'+
+   '<p class="lv-hint">Pozitivan prenos važi do 30. juna (čl. 85 st. 3); duže samo zbog bolovanja ili porodiljskog odsustva (čl. 85 st. 4–5).</p></div>';
+ }
+ function carryForm(empId){
+  const e=S.employees.find(x=>x.id===empId);if(!e)return;
+  const y=Number(leaveYear),b=lvBalance(e,y),explicit=e.leaveCarryByYear?.[y];
+  modal('Prenos iz '+(y-1)+'. – '+e.name,'<form id="carryForm" class="grid" data-emp="'+esc(e.id)+'">'+
+   '<div class="field"><label>Broj dana (pozitivan = neiskorišteno, negativan = prekoračeno)</label><input name="carry" type="number" step="1" min="-90" max="90" required value="'+esc(explicit??b.carry??0)+'"></div>'+
+   '<div class="field"><label>Rok za korišćenje</label><input name="deadline" type="date" value="'+esc(b.carryDeadline||ymd(y,6,30))+'"><small>Zakonski rok je 30.6.'+y+'. Duži rok upiši samo za bolovanje ili porodiljsko odsustvo.</small></div>'+
+   '<div class="field full"><label>Napomena (npr. „prema Excelu 2025.“)</label><input name="note" maxlength="120" value="'+esc(e.leaveCarryNoteByYear?.[y]||'')+'"></div>'+
+   '<div class="modalfoot full">'+(explicit!=null&&y===2026&&window.BALKAN_ARCHIVE?.isLoaded?.()?'<button class="btn" type="button" data-carry-reset="'+esc(e.id)+'">Vrati na arhivu 2025.</button>':'')+
+   '<button class="btn" type="button" data-act="close-modal">Odustani</button><button class="btn primary" type="submit">Sačuvaj prenos</button></div></form>');
+ }
+ async function setCarry(e,value,deadline,note,label){
+  const y=Number(leaveYear);
+  e.leaveCarryByYear||={};e.leaveCarryDeadlineByYear||={};e.leaveCarryNoteByYear||={};
+  if(value===null){delete e.leaveCarryByYear[y];delete e.leaveCarryDeadlineByYear[y];delete e.leaveCarryNoteByYear[y]}
+  else{e.leaveCarryByYear[y]=value;
+   if(deadline&&deadline!==ymd(y,6,30))e.leaveCarryDeadlineByYear[y]=deadline;else delete e.leaveCarryDeadlineByYear[y];
+   if(note)e.leaveCarryNoteByYear[y]=note;else delete e.leaveCarryNoteByYear[y]}
+  audit(label,e.name+' · '+(y-1)+'→'+y+': '+(value===null?'arhiva':signed(value))+(deadline?' · rok '+deadline:''));
+  try{await save();closeModal();render()}catch(err){alert('Nije sačuvano: '+err.message)}
+ }
+ document.addEventListener('submit',ev=>{
+  const f=ev.target;if(f.id!=='carryForm')return;
+  ev.preventDefault();ev.stopImmediatePropagation();
+  const e=S.employees.find(x=>x.id===f.dataset.emp);if(!e)return;
+  const v=Number(f.elements.carry.value),d=f.elements.deadline.value,n=f.elements.note.value.trim();
+  if(!Number.isInteger(v)||Math.abs(v)>90)return alert('Prenos mora biti cijeli broj između -90 i 90.');
+  if(d&&!/^\d{4}-\d\d-\d\d$/.test(d))return alert('Neispravan rok.');
+  setCarry(e,v,d,n,'Prenos godišnjeg odmora');
+ },true);
+ document.addEventListener('click',ev=>{
+  const t=ev.target.closest('[data-carry-edit],[data-carry-confirm],[data-carry-reset]');if(!t)return;
+  ev.preventDefault();ev.stopImmediatePropagation();if(!unlocked)return;
+  if(t.dataset.carryEdit)return carryForm(t.dataset.carryEdit);
+  const e=S.employees.find(x=>x.id===(t.dataset.carryConfirm||t.dataset.carryReset));if(!e)return;
+  if(t.dataset.carryConfirm){const b=lvBalance(e,leaveYear);if(confirm('Potvrditi prenos '+signed(b.carry)+' dana iz arhive 2025. za '+e.name+'?'))setCarry(e,b.carry,'','prema arhivi 2025.','Potvrđen prenos iz arhive')}
+  else if(confirm('Ukloniti ručni unos i koristiti vrijednost iz arhive 2025.?'))setCarry(e,null,'','','Prenos vraćen na arhivu');
+ },true);
  window.balkanLeaveBalance=lvBalance;
+ // Provjera neoznačenih dana broji iste dane kao "Nije radio (N)": samo završene dane (do juče).
+ const _reviewDays=likelyLeaveReviewDays;
+ likelyLeaveReviewDays=function(e,y){return (_reviewDays(e,y)||[]).filter(d=>String(d.date||d)<today())};
  const fmtN=v=>v==null?'—':String(v);
  // Tabela svih radnika: iste kolone i isti brojevi kao kartica radnika.
  balkanLiveLeaveSummary=function(year=leaveYear){
   const y=Number(year);
   const visible=S.employees.slice().filter(e=>showAllStaff||(!e.hidden&&!e.isTest&&e.active!==false)).sort((a,b)=>a.name.localeCompare(b.name,'bs'));
-  const rows=visible.map(e=>{
-   const b=lvBalance(e,y);
-   return '<tr'+(e.id===leaveEmployeeId?' class="lv-sel"':'')+'><td><button class="btn small" data-leave-emp="'+esc(e.id)+'">'+esc(e.name)+'</button></td>'+
-    '<td>'+fmtN(b.quota)+'</td><td>'+(b.carry?(b.carry>0?'+':'')+b.carry+(b.carryExpired?' <small>(isteklo '+b.carryExpired+')</small>':''):'0')+'</td>'+
-    '<td><b>'+fmtN(b.total)+'</b></td><td class="lv-u">'+b.used+'</td><td class="lv-p">'+b.planned+'</td><td class="lv-n">'+b.absent+'</td>'+
-    '<td><b class="lv-rem'+(b.remaining<0?' bad':'')+'">'+fmtN(b.remaining)+'</b></td>'+
-    '<td><small>'+(b.confirmed?'Potvrđen fond':'Procjena – potvrdi pravo')+'</small></td></tr>';
-  }).join('');
-  return '<section class="panel" id="balkanLiveLeaveSummary"><div class="panel-head"><h2>Svi radnici – godišnji odmor '+y+'.</h2><span class="smalltext">stanje na dan '+esc(dl(today()))+'</span></div>'+
-   '<div class="tablewrap"><table class="simpletable lv-table"><thead><tr><th>Radnik</th><th>Pravo '+y+'</th><th>Prenos iz '+(y-1)+'</th><th>Ukupno za odmor</th><th>Iskorišćeno</th><th>Planirano</th><th>Nije radio (N)</th><th>Preostalo</th><th>Status</th></tr></thead><tbody>'+
+  const list=visible.map(e=>({e,b:lvBalance(e,y)}));
+  const missing=list.filter(x=>x.b.carrySource.kind==='none'&&!x.b.carry).length,archived=list.filter(x=>x.b.carrySource.kind==='archive').length;
+  const A=window.BALKAN_ARCHIVE,loaded=!!A?.isLoaded?.();
+  const banner=y===2026?'<div class="lv-banner'+(missing?' warn':'')+'">'+(loaded?'Arhiva 2025. je uvezena.':'<b>Arhiva 2025. nije uvezena</b> (Arhiva 2025 → uvoz), pa se prenos ne može automatski preuzeti.')+
+   (missing?' <b>'+missing+'</b> '+(missing===1?'radnik nema':'radnika nema')+' podatak o prenosu: klikni radnika pa „Uredi prenos“.':' Svi radnici imaju podatak o prenosu.')+(archived?' '+archived+' iz arhive čeka potvrdu (*).':'')+'</div>':'';
+  const rows=list.map(({e,b})=>'<tr'+(e.id===leaveEmployeeId?' class="lv-sel"':'')+'><td><button class="btn small" data-leave-emp="'+esc(e.id)+'">'+esc(e.name)+'</button></td>'+
+    '<td>'+fmtN(b.quota)+'</td><td>'+carryCell(b)+'</td><td><b>'+fmtN(b.total)+'</b></td><td class="lv-u">'+b.used+'</td><td class="lv-p">'+b.planned+'</td>'+
+    '<td><b class="lv-rem'+(b.remaining<0?' bad':'')+'">'+fmtN(b.remaining)+'</b></td><td class="lv-n">'+b.absent+'</td>'+
+    '<td><small>'+(b.confirmed?'Potvrđen fond':'Procjena – potvrdi pravo')+'</small></td></tr>').join('');
+  return '<section class="panel" id="balkanLiveLeaveSummary"><div class="panel-head"><h2>Svi radnici – godišnji odmor '+y+'.</h2><span class="smalltext">stanje na dan '+esc(dl(today()))+'</span></div>'+banner+
+   '<div class="tablewrap"><table class="simpletable lv-table"><thead><tr><th>Radnik</th><th>Pravo '+y+'</th><th>Prenos iz '+(y-1)+'</th><th>Ukupno za odmor</th><th>Iskorišćeno</th><th>Planirano</th><th>Preostalo</th><th>Nije radio (N)</th><th>Status</th></tr></thead><tbody>'+
    (rows||'<tr><td colspan="9">Nema radnika u ovom prikazu.</td></tr>')+'</tbody></table></div>'+
-   '<p class="smalltext"><b>Ukupno za odmor</b> = pravo + važeći prenos (rok 30. jun). <b>Preostalo</b> = ukupno − iskorišćeno − planirano. <b>Nije radio (N)</b> su radni dani bez prijave od početka evidencije: ne troše godišnji odmor. Dan postaje godišnji samo kada ga označiš kao GO ili izdaš rješenje.</p></section>';
+   '<p class="smalltext"><b>Prenos</b>: + neiskorišteni dani iz prošle godine (važe do 30.6.), − dani koje je radnik iskoristio preko prava. <b>Ukupno</b> = pravo + važeći prenos. <b>Preostalo</b> = ukupno − iskorišćeno − planirano. <b>Nije radio (N)</b> se ne oduzima. * = iz arhive, čeka potvrdu.</p></section>';
  };
  function explainSection(e){
-  const b=lvBalance(e,leaveYear),y=Number(leaveYear);
-  return '<section class="panel" id="balkanAnnualToday"><h2>Kako je izračunato – '+esc(e.name)+'</h2>'+
-   '<div class="lv-calc">'+
-    '<div><span>Pravo za '+y+'.</span><b>'+fmtN(b.quota)+'</b></div><em>+</em>'+
-    '<div><span>Prenos iz '+(y-1)+'.</span><b>'+b.carryUsable+'</b></div><em>=</em>'+
-    '<div class="tot"><span>Ukupno za odmor</span><b>'+fmtN(b.total)+'</b></div><em>−</em>'+
-    '<div><span>Iskorišćeno</span><b>'+b.used+'</b></div><em>−</em>'+
-    '<div><span>Planirano</span><b>'+b.planned+'</b></div><em>=</em>'+
-    '<div class="rem"><span>Preostalo</span><b>'+fmtN(b.remaining)+'</b></div>'+
-   '</div>'+
-   '<p class="smalltext">Nije radio (N): <b>'+b.absent+'</b> dana u '+y+'. Ti dani se <b>ne oduzimaju</b> od godišnjeg. Ako je radnik tada stvarno bio na odmoru, potvrdi ih ispod u „Provjera neoznačenih dana“ ili klikom u kalendaru (N → P → GO).'+
-   (b.carryExpired?' Preneseni dani kojima je istekao rok ('+b.carryExpired+') se ne računaju.':'')+
-   (b.accrued!=null&&y===Number(today().slice(0,4))?' Srazmjerno ostvareno do danas (informativno): '+b.accrued+' dana.':'')+'</p></section>';
+  const y=Number(leaveYear);
+  return '<section class="panel" id="balkanAnnualToday"><h2>Kako se računa godišnji odmor</h2><ol class="lv-rules">'+
+   '<li><b>Pravo za '+y+'.</b> – 20 radnih dana (24 za šestodnevnu radnu sedmicu, 26 za lica sa invaliditetom); u godini zaposlenja ili prestanka 1/12 za svaki započeti mjesec (čl. 79, 81).</li>'+
+   '<li><b>Prenos iz '+(y-1)+'.</b> – neiskorišteni dani (+) važe do 30.6.'+y+'.; prekoračeni dani (−) se oduzimaju (čl. 85).</li>'+
+   '<li><b>Ukupno za odmor</b> = pravo + važeći prenos.</li>'+
+   '<li><b>Iskorišćeno</b> = protekli dani godišnjeg (rješenja i ručno označen GO). Prvo se troši prenos, pa tekuće pravo.</li>'+
+   '<li><b>Preostalo</b> = ukupno − iskorišćeno − planirano.</li>'+
+   '<li><b>Nije radio (N)</b> – radni dani bez prijave. Ne troše godišnji; ako je radnik bio na odmoru, označi dan kao GO.</li></ol></section>';
  }
  // ---------------- NOVI IZGLED STRANICE ----------------
  function yearCalendar(e,y){
@@ -2902,29 +2998,29 @@ SYNC_NAMES.push('scanTrash');
   const e=S.employees.find(x=>x.id===leaveEmployeeId);
   let hero='';
   if(e){
-   const bal=lvBalance(e,leaveYear),g=leaveGrant(e.id,Number(leaveYear))||(bal.quota!=null?{days:bal.quota}:null),total=bal.total||0;
-   const used=bal.used,up=bal.planned,rem=bal.remaining;
-   const pct=x=>total?Math.min(100,Math.round(x/total*100)):0;
-   const decs=S.leaveDecisions.filter(x=>x.empId===e.id&&Number(x.year)===Number(leaveYear)).sort((a,b)=>String(b.issuedAt).localeCompare(String(a.issuedAt)));
+   const y=Number(leaveYear),bal=lvBalance(e,y),g=leaveGrant(e.id,y)||(bal.quota!=null?{days:bal.quota}:null),total=Math.max(1,bal.total||0);
+   const pct=x=>Math.max(0,Math.min(100,Math.round(x/total*100)));
+   const decs=S.leaveDecisions.filter(x=>x.empId===e.id&&Number(x.year)===y).sort((a,b)=>String(b.issuedAt).localeCompare(String(a.issuedAt)));
    const list=decs.map(d=>'<div class="lv-dec'+(d.status==='issued'?'':' cx')+'"><span class="no">'+esc(d.number)+'</span><div><div class="per">'+esc(dl(d.from))+' – '+esc(dl(d.to))+' · '+d.days.length+' radnih dana</div><div class="meta">Doneseno '+esc(dl(d.issuedAt))+' · dostavljeno '+esc(dl(d.deliveredAt))+(d.status==='issued'?'':' · STORNIRANO: '+esc(d.cancelledReason||''))+'</div></div>'+
     '<div class="actionline"><button class="btn small primary" data-leave-print="'+esc(d.id)+'">Pregled / štampa</button><button class="btn small" data-leave-doc="'+esc(d.id)+'">Word (.docx)</button>'+(d.status==='issued'?'<button class="btn small danger" data-leave-cancel="'+esc(d.id)+'">Storniraj</button>':'')+'</div></div>').join('');
-   hero='<section class="lv-hero">'+
-    '<div class="panel lv-person"><div><h2>'+esc(e.name)+'</h2><div class="sub">'+esc(e.position||'Radno mjesto nije upisano')+' · '+esc(locName(assigned(e,today())||e.defaultLocationId))+' · '+esc(e.contract||'vrsta ugovora nije upisana')+'</div></div>'+
-     (g?'<div class="lv-bar" title="Iskorišćeno / odobreno unaprijed / preostalo"><i class="u" style="width:'+pct(used)+'%"></i><i class="r" style="width:'+pct(up)+'%"></i></div>':'<div class="note">Godišnji fond za '+leaveYear+'. još nije utvrđen. Klikni „Odredi godišnji fond“.</div>')+
-     '<div class="lv-nums">'+
-      '<div class="lv-num"><b>'+fmtN(bal.quota)+'</b><span>Pravo '+leaveYear+'.</span></div>'+
-      (bal.carryUsable?'<div class="lv-num"><b>'+(bal.carryUsable>0?'+':'')+bal.carryUsable+'</b><span>Prenos iz '+(Number(leaveYear)-1)+'.</span></div>':'')+
-      '<div class="lv-num tot"><b>'+fmtN(bal.total)+'</b><span>Ukupno za odmor</span></div>'+
-      '<div class="lv-num g"><b>'+used+'</b><span>Iskorišćeno</span></div>'+
-      '<div class="lv-num bl"><b>'+up+'</b><span>Planirano</span></div>'+
-      '<div class="lv-num rd"><b>'+bal.absent+'</b><span>Nije radio (N)</span></div>'+
-      '<div class="lv-num or" style="grid-column:span '+(bal.carryUsable?2:3)+'"><b>'+fmtN(rem)+'</b><span>Preostalo</span></div></div>'+
-      '<div class="lv-hint">Dani kada nije radio (N) ne troše godišnji odmor.</div>'+
-     '<div class="lv-actions"><button class="btn primary lv-new" data-leave-new="'+esc(e.id)+'">+ Novo rješenje za '+esc(e.name.split(' ')[0])+'</button><button class="btn" data-leave-grant="'+esc(e.id)+'">⚙ Odredi godišnji fond</button></div></div>'+
-    '<div class="panel"><h2 style="margin-top:0">Godina '+leaveYear+'. – kada je radio, a kada bio na odmoru</h2><div class="lv-year">'+yearCalendar(e,Number(leaveYear))+'</div>'+
+   const box=(cls,label,val,sub)=>'<div class="lv-box '+cls+'"><span>'+label+'</span><b>'+val+'</b>'+(sub?'<small>'+sub+'</small>':'')+'</div>';
+   const carrySub=bal.carry>0?(bal.carryExpired?'od '+signed(bal.carry)+', isteklo '+bal.carryExpired:bal.carryActive?'važi do '+dl(bal.carryDeadline):'iskorišteno'):bal.carry<0?'prekoračeno u '+(y-1)+'.':bal.carrySource.kind==='none'?'nema podatka':'';
+   hero='<section class="panel lv-person lv-main"><div class="lv-head"><div><h2>'+esc(e.name)+'</h2><div class="sub">'+esc(e.position||'Radno mjesto nije upisano')+' · '+esc(locName(assigned(e,today())||e.defaultLocationId))+' · '+esc(e.contract||'vrsta ugovora nije upisana')+'</div></div>'+
+     '<div class="lv-actions"><button class="btn primary lv-new" data-leave-new="'+esc(e.id)+'">+ Novo rješenje</button><button class="btn" data-leave-grant="'+esc(e.id)+'">⚙ Odredi godišnji fond</button></div></div>'+
+     (g?'':'<div class="note">Godišnji fond za '+y+'. još nije utvrđen. Klikni „Odredi godišnji fond“.</div>')+
+     '<div class="lv-eq">'+box('','Pravo '+y+'.',fmtN(bal.quota))+'<em>+</em>'+
+      box('carry '+(bal.carryUsable>0?'pos':bal.carryUsable<0?'neg':''),'Prenos iz '+(y-1)+'.',signed(bal.carryUsable),carrySub)+'<em>=</em>'+
+      box('tot','Ukupno za odmor',fmtN(bal.total))+'<em>−</em>'+
+      box('g','Iskorišćeno',bal.used)+'<em>−</em>'+box('bl','Planirano',bal.planned)+'<em>=</em>'+
+      box('rem'+(bal.remaining<0?' bad':''),'Preostalo',fmtN(bal.remaining),'dana godišnjeg')+'</div>'+
+     '<div class="lv-bar" title="Iskorišćeno / planirano / preostalo"><i class="u" style="width:'+pct(bal.used)+'%"></i><i class="r" style="width:'+pct(bal.planned)+'%"></i></div>'+
+     '<div class="lv-absent"><b>'+bal.absent+'</b> '+(bal.absent===1?'dan':'dana')+' bez prijave (N) u '+y+'. – <b>ne oduzima se</b> od godišnjeg.</div>'+
+    '</section>'+
+    '<section class="lv-hero">'+carryCard(e,bal,y)+
+    '<div class="panel"><h2 style="margin-top:0">Godina '+y+'. – kada je radio, a kada bio na odmoru</h2><div class="lv-year">'+yearCalendar(e,y)+'</div>'+
      '<div class="lv-legend"><span><i style="background:#bfe6d1"></i>Radio</span><span><i style="background:#2a62b8"></i>Godišnji odmor</span><span><i style="background:#f5c3cb"></i>Nije radio</span><span><i style="background:#a68ad9"></i>Bolovanje</span><span><i style="background:#7ccbb1"></i>Praznik</span><span><i style="background:#f1f3f7"></i>Nema evidencije / budući dan</span></div></div>'+
     '</section>'+
-    '<section class="panel"><div class="panel-head"><h2>Rješenja – '+esc(e.name)+' · '+leaveYear+'.</h2></div><div class="lv-decs">'+(list||'<div class="lv-empty">Još nema rješenja za ovu godinu. <button class="btn small primary" data-leave-new="'+esc(e.id)+'">+ Novo rješenje</button></div>')+'</div></section>';
+    '<section class="panel"><div class="panel-head"><h2>Rješenja – '+esc(e.name)+' · '+y+'.</h2></div><div class="lv-decs">'+(list||'<div class="lv-empty">Još nema rješenja za ovu godinu. <button class="btn small primary" data-leave-new="'+esc(e.id)+'">+ Novo rješenje</button></div>')+'</div></section>';
   }
   return pageTitle('Godišnji odmori','Pravo, korišćenje i rješenja o godišnjem odmoru',
     '<button class="btn" data-leave-template="1">✎ Šablon rješenja</button><button class="btn primary lv-new" data-leave-new="'+esc(e?.id||'')+'">+ Novo rješenje</button>')+
@@ -3036,4 +3132,4 @@ window.BALKAN_V6={
  backup:()=>doExport(),
  defaultState:()=>defaultState()
 };
-</script><script type="module" src="./admin-firebase.js?v=20261019del9"></script></body></html>
+</script><script type="module" src="./admin-firebase.js?v=20261019carry14"></script></body></html>

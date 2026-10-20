@@ -38,9 +38,9 @@ const balance=await page.evaluate(()=>{
 });
 assert.equal(balance.quota,24,'Annual entitlement is 24 days for this 6-day worker');
 assert.equal(balance.carry,-5,'Carried balance is preserved');
-assert.ok(balance.autoLeave>0,'Unscanned workdays in populated month use agreed auto leave');
+assert.equal(balance.autoLeave,0,'Dan bez prijave ostaje N i ne troši godišnji');
 assert.equal(balance.annualRemaining,24-5-balance.used-balance.planned,'Full-year balance has no double counting');
-assert.ok(rowText.includes('slobodno do danas '+balance.remaining),'Dashboard shows current accrued balance: '+rowText);
+assert.ok(rowText.includes('preostalo '+balance.annualRemaining),'Pregled pokazuje isti preostali broj kao stranica godišnjeg: '+rowText);
 assert.equal(await page.getByText('Skriveni Probni').count(),0,'Hidden test staff excluded from overview');
 await page.getByRole('button',{name:/Radnici/}).first().click();
 assert.equal(await page.locator('#balkanLiveLeaveSummary').count(),0,'Annual balances removed from Radnici tab');
@@ -48,7 +48,7 @@ assert.equal(await page.locator('#balkanWorkerManagement tr').filter({hasText:'S
 await page.locator('[data-route="godisnji"]').first().click();
 const leaveRow=page.locator('#balkanLiveLeaveSummary tr').filter({hasText:'Smjenski Test'}).first();
 const leaveText=await leaveRow.innerText();
-for(const part of ['24','-5',String(balance.remaining)])assert.ok(leaveText.includes(part),'Annual leave part '+part);
+for(const part of ['24','-5',String(balance.annualRemaining)])assert.ok(leaveText.includes(part),'Annual leave part '+part);
 await page.locator('[data-route="radnici"]').first().click();
 assert.equal(await page.locator('#balkanWorkerManagement').getByText('Skriveni Probni').count(),0,'Hidden staff not in employee management; diagnostic may still explain exclusion');
 await page.locator('[data-worker-toggle]').click();

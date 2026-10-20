@@ -47,7 +47,7 @@ try{
  assert.deepEqual(logic.holidays,['religious','religious'],'Both days identified');
  assert.equal(logic.overlap.status,'VH','Paid holiday visible even when legacy GO override exists');
  assert.equal(logic.overlap.holidayAuto,false,'Paid holiday must not become automatic leave');
- assert.ok(logic.overlap.used>0,'Agreed no-show workdays counted automatically');
+ assert.equal(logic.overlap.used,0,'Dani bez prijave ostaju N i ne troše godišnji');
  assert.ok(!logic.goDays.includes('2026-10-07')&&!logic.goDays.includes('2026-10-08'),'Holiday excluded from annual leave');
  assert.ok(logic.candidates.includes('2026-10-06'),'Unscanned working day proposed');
  assert.ok(!logic.candidates.includes('2026-10-07'),'Holiday not proposed as vacation');
@@ -66,7 +66,7 @@ try{
  await page.waitForFunction(()=>window.BALKAN_V6.state().overrides.some(o=>o.id!=='audit-present'&&o.empId==='audit-vacation'&&o.date==='2026-10-06'&&o.status==='GO'));
  const after=await page.evaluate(()=>window.BALKAN_V6.state().overrides);
  const afterCount=await page.evaluate(()=>leaveCount('audit-vacation',2026).used);
- assert.equal(afterCount,logic.overlap.used,'Converting an automatic day to approved GO must not double count');
+ assert.equal(afterCount,logic.overlap.used+1,'Svjesno potvrđen GO dan broji se tačno jednom');
  assert.ok(after.some(o=>o.empId==='audit-vacation'&&o.date==='2026-10-05'&&o.status==='P'),'Existing marked presence preserved');
  assert.ok(after.some(o=>o.empId==='audit-vacation'&&o.date==='2026-10-06'&&o.status==='GO'),'Confirmed day becomes GO');
  assert.ok(!after.some(o=>o.empId==='audit-vacation'&&o.date==='2026-10-07'&&o.status==='GO'),'Holiday remains unmodified');

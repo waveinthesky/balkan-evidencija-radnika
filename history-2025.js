@@ -4,6 +4,8 @@ const escape=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>'
 const norm=s=>String(s||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/[^a-z0-9]/gi,'').toLowerCase();
 const ref=db=>doc(db,'records','archive2025','items','year2025');
 export async function load(db){let s=await getDocFromServer(ref(db));archive=s.exists()?s.data():null;return archive}
+export function isLoaded(){return !!archive?.workers}
+export function workerNames(){return (archive?.workers||[]).map(w=>w.name)}
 export function carryoverFor2026(workerName){
  if(!archive?.workers||!workerName)return null;
  const w=archive.workers.find(e=>norm(e.name)===norm(workerName));
