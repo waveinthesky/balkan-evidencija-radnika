@@ -94,6 +94,7 @@ try{
  assert.equal((await items()).length,1,'Rejected card kept for review');
  assert.match(await page.locator('#queueState').innerText(),/1 zapis zahtijeva provjeru/);
  await page.evaluate(()=>globalThis.__denyWrite=true);
+ await page.locator('#modeIn').click(); // dugme važi samo za jedno skeniranje
  await scan('MARKET1');
  await page.waitForFunction(()=>document.querySelector('#syncStatus')?.textContent.includes('Firebase odbija upis'));
  assert.equal((await items()).filter(x=>x.flag!=='review').length,1,'Permission denied leaves pending event');

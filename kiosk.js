@@ -4,7 +4,7 @@ const $=id=>document.getElementById(id);
 const esc=s=>String(s??'').replace(/[&<>'"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[c]));
 const OUTBOX_KEY='balkan_kiosk_outbox_v1',RECENT_KEY='balkan_kiosk_lastscan_v1',HISTORY_KEY='balkan_kiosk_confirmed_v1',
  RECEIPT_KEY='balkan_kiosk_receipt_v1',BADGES_KEY='balkan_kiosk_badges_v1',LIMIT=1500,MODULE='./kiosk-firebase.js?v=20261019v6';
-let mode='in',busy=false,flushing=null,transport=null,lastScan=null,history=[],receiptId=null;
+let mode='auto',modeTimer=null,busy=false,flushing=null,transport=null,lastScan=null,history=[],receiptId=null;
 const HISTORY_MAX=400,SHIFT_WINDOW_MS=18*3600000,CONFIRM_MS=30000;
 let pendingConfirm=null,spawnWorker=null,syncRequested=false,includeReviewsNext=false,firebaseWarmup=null,retryTimer=null,idleTimer=null,lastServerOk=0;
 
@@ -66,7 +66,7 @@ function showReceipt(info,persist=true){
 }
 function showIdle(){
  showReceipt({variant:'idle',icon:'⌁',heading:'Spremno za skeniranje',name:'Prinesi karticu',kind:mode,
-  state:'ČEKA SE SKENIRANJE',hint:'Izaberi DOLAZAK ili ODLAZAK, pa skeniraj karticu.',
+  state:'ČEKA SE SKENIRANJE',hint:'Samo skeniraj karticu – kasa sama prepoznaje dolazak i odlazak.',
   message:navigator.onLine?'Spremno za skeniranje.':'Offline režim: skeniranja se čuvaju na ovom računaru.'},false);
  try{localStorage.removeItem(RECEIPT_KEY)}catch{}
 }
@@ -131,14 +131,21 @@ function showQueue(){
   '<div class="empty">Nema skeniranja na ovom računaru.</div>';
  connection();
 }
+// AUTOMATSKI način (podrazumijevano): kasa sama zna da li je DOLAZAK ili ODLAZAK prema
+// posljednjem skeniranju te kartice na ovom računaru. Dugme DOLAZAK/ODLAZAK važi samo za
+// SLJEDEĆE skeniranje (30 s), pa zaboravljeno dugme više ne može blokirati sljedećeg radnika.
+const AUTO_GUARD_MS=10*60000,MODE_HOLD_MS=30000;
 function setMode(value){
- mode=value;
- if($('receipt').classList.contains('idle')){$('receiptKind').textContent=value==='out'?'↗ ODLAZAK':'↘ DOLAZAK';$('receiptKind').dataset.kind=value}
+ mode=value;clearTimeout(modeTimer);
+ if(value!=='auto')modeTimer=setTimeout(()=>setMode('auto'),MODE_HOLD_MS);
+ if($('receipt').classList.contains('idle')){$('receiptKind').textContent=value==='out'?'↗ ODLAZAK':value==='in'?'↘ DOLAZAK':'↔ AUTOMATSKI';$('receiptKind').dataset.kind=value==='out'?'out':'in'}
  $('modeIn').className='mode mode-in'+(value==='in'?' on':'');
  $('modeOut').className='mode mode-out'+(value==='out'?' out':'');
  $('modeIn').setAttribute('aria-pressed',String(value==='in'));
  $('modeOut').setAttribute('aria-pressed',String(value==='out'));
- document.body.dataset.mode=value;
+ const auto=$('modeAuto');if(auto){auto.classList.toggle('on',value==='auto');
+  auto.innerHTML=value==='auto'?'<b>↔ AUTOMATSKI</b> – samo skeniraj karticu, kasa sama prepoznaje dolazak i odlazak.':'<b>Ručno izabrano: '+(value==='in'?'DOLAZAK':'ODLAZAK')+'</b> – važi samo za sljedeće skeniranje.'}
+ document.body.dataset.mode=value==='out'?'out':'in';
  focus();
 }
 function focus(){
@@ -373,7 +380,8 @@ $('queueRetry').addEventListener('click',async()=>{
 $('diagRun').addEventListener('click',()=>void runDiagnostics());
 $('scanForm').addEventListener('submit',e=>{
  e.preventDefault();
- const code=normalizeCode($('barcode').value),selectedMode=mode,now=Date.now();
+ const code=normalizeCode($('barcode').value),now=Date.now();
+ let selectedMode=mode,explicit=mode!=='auto',autoNote='';
  $('barcode').value='';
  if(!code||busy)return;
  busy=true;
@@ -381,7 +389,21 @@ $('scanForm').addEventListener('submit',e=>{
   const items=readQueue();
   if(items.length>=LIMIT)throw Error('Lokalna evidencija je puna. Zatraži pomoć administratora.');
   const last=lastLocalScan(code,now,items);
-  if(last&&last.kind===selectedMode){
+  const confirming=pendingConfirm&&pendingConfirm.code===code&&now-pendingConfirm.at<CONFIRM_MS;
+  if(confirming){selectedMode='out';explicit=true}
+  else if(!explicit){
+   selectedMode=last&&last.kind==='in'?'out':'in';
+   // Slučajno dvostruko skeniranje (npr. radnik nije siguran da je prošlo) ne smije postati odlazak.
+   if(last&&now-Date.parse(last.at)<AUTO_GUARD_MS){
+    showReceipt({variant:'warn',icon:'i',heading:'Već evidentirano – novi zapis nije potreban',name:cardLabel(code),kind:last.kind,at:last.at,
+     state:(last.kind==='in'?'DOLAZAK':'ODLAZAK')+' JE VEĆ UPISAN U '+clock(last.at),
+     hint:'Kartica je skenirana prije manje od 10 minuta. Ako zaista '+(last.kind==='in'?'odlaziš':'ponovo dolaziš')+' sada, pritisni '+(last.kind==='in'?'ODLAZAK':'DOLAZAK')+' pa skeniraj karticu.',
+     message:'Ponovljeno skeniranje nije upisano.'});
+    return;
+   }
+   autoNote=last?'Program je sam prepoznao '+(selectedMode==='out'?'ODLAZAK (dolazak u '+clock(last.at)+')':'DOLAZAK (odlazak u '+clock(last.at)+')')+'. ':'';
+  }
+  if(explicit&&!confirming&&last&&last.kind===selectedMode){
    const name=cardLabel(code);
    showReceipt({variant:'warn',icon:'i',heading:'Već evidentirano – novi zapis nije potreban',name,kind:selectedMode,at:last.at,
     state:selectedMode==='in'?'VEĆ SI PRIJAVLJEN OD '+clock(last.at):'VEĆ SI ODJAVLJEN U '+clock(last.at),
@@ -391,13 +413,12 @@ $('scanForm').addEventListener('submit',e=>{
    pendingConfirm=null;
    return;
   }
-  if(selectedMode==='out'&&!last){
-   const confirmed=pendingConfirm&&pendingConfirm.code===code&&now-pendingConfirm.at<CONFIRM_MS;
-   if(!confirmed){
+  if(explicit&&selectedMode==='out'&&!last){
+   if(!confirming){
     pendingConfirm={code,at:now};
     showReceipt({variant:'warn',icon:'?',heading:'Potrebna potvrda',name:cardLabel(code),kind:'out',at:new Date(now).toISOString(),
      state:'NEMA DOLASKA NA OVOJ KASI',
-     hint:'Na ovoj kasi nema tvog DOLASKA u zadnjih 18 sati. Ako zaista odlaziš, skeniraj karticu JOŠ JEDNOM u roku od 30 sekundi. Ako dolaziš, izaberi DOLAZAK.',
+     hint:'Na ovoj kasi nema tvog DOLASKA u zadnjih 18 sati. Ako zaista odlaziš, skeniraj karticu JOŠ JEDNOM u roku od 30 sekundi. Ako dolaziš, samo skeniraj ponovo poslije 30 sekundi (automatski) ili pritisni DOLAZAK.',
      message:'Ništa još nije upisano.'});
     return;
    }
@@ -417,7 +438,7 @@ $('scanForm').addEventListener('submit',e=>{
   const name=cardLabel(code);
   showReceipt({id:item.id,variant:'pending',icon:'⏳',heading:navigator.onLine?'Šaljem u Firebase…':'Sačuvano bez interneta',
    name,kind:selectedMode,at:item.at,state:'SAČUVANO NA OVOM RAČUNARU',
-   hint:navigator.onLine?'Prijava je sačuvana. Čekam potvrdu centralne baze (obično ispod 1 sekunde).':'Nema interneta. Zapis će se automatski poslati kada se veza vrati.',
+   hint:autoNote+(navigator.onLine?'Prijava je sačuvana. Čekam potvrdu centralne baze (obično ispod 1 sekunde).':'Nema interneta. Zapis će se automatski poslati kada se veza vrati.'),
    message:'Sačuvano NA OVOM RAČUNARU: '+(selectedMode==='in'?'DOLAZAK':'ODLAZAK')+'. Još NIJE potvrđeno u Firebase bazi.'});
   showQueue();
   setSyncMessage(navigator.onLine?'Slanje u Firebase je u toku…':'Nema interneta – čekaju lokalni zapisi.');
@@ -426,7 +447,7 @@ $('scanForm').addEventListener('submit',e=>{
   showReceipt({variant:'bad',icon:'!',heading:'Skeniranje nije sačuvano',name:cardLabel(code),kind:selectedMode,
    at:new Date(now).toISOString(),state:'NIJE EVIDENTIRANO',hint:'Koristi rezervnu ručnu evidenciju i obavijesti administratora.',
    message:'NIJE SAČUVANO: '+describe(err)});
- }finally{busy=false;showQueue();focus()}
+ }finally{busy=false;if(mode!=='auto')setMode('auto');showQueue();focus()}
 });
 window.addEventListener('offline',()=>{showQueue();setSyncMessage('Offline: novi skenovi se čuvaju na ovom računaru.')});
 window.addEventListener('online',()=>{showQueue();setSyncMessage('Internet je ponovo dostupan; šaljem zapise…');void warmFirebase().catch(()=>{});void syncQueue()});
@@ -449,7 +470,7 @@ try{
  showReceipt({variant:'bad',icon:'!',heading:'Lokalna evidencija nije dostupna',state:'NE KORISTI EKRAN ZA PRIJAVU',
   hint:'Koristi ručnu evidenciju dok administrator ne provjeri podatke.',message:'Lokalna evidencija je nedostupna: '+describe(err)});
 }
-setMode('in');showQueue();focus();
+setMode('auto');showQueue();focus();
 if(navigator.onLine){
  void warmFirebase().then(()=>{lastServerOk=lastServerOk||0;connection()}).catch(err=>{
   setSyncMessage('Firebase veza još nije spremna: '+describe(err)+' Prijave se čuvaju lokalno.','bad');

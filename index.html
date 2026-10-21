@@ -50,6 +50,9 @@ button:disabled{cursor:not-allowed;opacity:.5}
 .mode .arrow{font-size:40px;line-height:1;font-weight:700;width:46px;text-align:center}
 .mode b{display:block;font-size:30px;letter-spacing:.03em;line-height:1.05}
 .mode small{display:block;font-size:14px;font-weight:500;margin-top:4px}
+.mode-auto{border-radius:12px;padding:12px 14px;margin-bottom:12px;background:#fff7e6;border:2px solid #f0d49a;color:#5c4300;font-size:15px;line-height:1.35}
+.mode-auto.on{background:#e3f4ec;border-color:#7fcca5;color:#0b5a3b}
+.mode-auto b{font-size:17px}
 .mode-in.on{border-color:var(--in);background:var(--in-bg);color:var(--in)}
 .mode-out.out{border-color:var(--out);background:var(--out-bg);color:var(--out)}
 .mode:not(.on):not(.out):hover{border-color:#b7c3d3}
@@ -156,9 +159,10 @@ h2{font-size:18px;margin:0}
 
 <main class="wrap" id="kiosk">
  <section class="panel" aria-label="Izbor radnje i skeniranje">
-  <div class="modes" role="group" aria-label="Radnja">
-   <button class="mode mode-in on" id="modeIn" type="button" aria-pressed="true"><span class="arrow" aria-hidden="true">↘</span><span><b>DOLAZAK</b><small>Početak smjene</small></span></button>
-   <button class="mode mode-out" id="modeOut" type="button" aria-pressed="false"><span class="arrow" aria-hidden="true">↗</span><span><b>ODLAZAK</b><small>Kraj smjene</small></span></button>
+  <div class="mode-auto on" id="modeAuto" aria-live="polite"><b>↔ AUTOMATSKI</b> – samo skeniraj karticu, kasa sama prepoznaje dolazak i odlazak.</div>
+  <div class="modes" role="group" aria-label="Radnja (samo za izuzetke)">
+   <button class="mode mode-in on" id="modeIn" type="button" aria-pressed="true"><span class="arrow" aria-hidden="true">↘</span><span><b>DOLAZAK</b><small>Samo ako kasa pogriješi</small></span></button>
+   <button class="mode mode-out" id="modeOut" type="button" aria-pressed="false"><span class="arrow" aria-hidden="true">↗</span><span><b>ODLAZAK</b><small>Samo ako kasa pogriješi</small></span></button>
   </div>
   <form id="scanForm">
    <label class="scanlabel" for="barcode">Barkod kartice</label>
@@ -173,7 +177,7 @@ h2{font-size:18px;margin:0}
    <div class="receipt-heading" id="receiptHeading">Spremno za skeniranje</div>
    <div class="receipt-person" id="receiptPerson">Prinesi karticu</div>
    <div class="receipt-meta"><span id="receiptKind" data-kind="in">↘ DOLAZAK</span><span id="receiptTime">Čeka se skeniranje</span></div>
-   <p class="receipt-hint" id="receiptHint">Izaberi DOLAZAK ili ODLAZAK, pa skeniraj karticu.</p>
+   <p class="receipt-hint" id="receiptHint">Samo skeniraj karticu – kasa sama prepoznaje dolazak i odlazak.</p>
    <div id="status" class="result">Spremno za skeniranje.</div>
   </div>
  </section>
@@ -199,5 +203,5 @@ h2{font-size:18px;margin:0}
   </div>
  </div>
 </main>
-<script type="module" src="./kiosk.js?v=20261019v8"></script>
+<script type="module" src="./kiosk.js?v=20261021auto19"></script>
 </body></html>
