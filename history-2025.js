@@ -6,24 +6,38 @@ const ref=db=>doc(db,'records','archive2025','items','year2025');
 export async function load(db){let s=await getDocFromServer(ref(db));archive=s.exists()?s.data():null;return archive}
 export function isLoaded(){return !!archive?.workers}
 export function workerNames(){return (archive?.workers||[]).map(w=>w.name)}
-export function carryoverFor2026(workerName){
+// Radnik može u arhivi 2025. imati drugo ime (npr. prezime prije udaje). Arhiva se ne mijenja;
+// program pamti staro ime kod radnika (archiveNames) i po njemu pronalazi podatke.
+let aliasMap=new Map();
+export function setAliases(employees){aliasMap=new Map();for(const e of employees||[])for(const a of e.archiveNames||[])if(a&&norm(a)!==norm(e.name))aliasMap.set(norm(a),e.name)}
+const shown=n=>{const c=aliasMap.get(norm(n));return c?c+' (u arhivi 2025: '+n+')':n};
+export function carryoverFor2026(workerName,aliases=[]){
  if(!archive?.workers||!workerName)return null;
- const w=archive.workers.find(e=>norm(e.name)===norm(workerName));
- const balance=Number(w?.excelRemaining);
- return w&&Number.isFinite(balance)?{balance,source:'Excel 2025',provisional:true}:null;
+ for(const name of [workerName,...(aliases||[])]){
+  const w=archive.workers.find(e=>norm(e.name)===norm(name));
+  const balance=Number(w?.excelRemaining);
+  if(w&&Number.isFinite(balance))return {balance,source:'Excel 2025',provisional:true,archiveName:w.name};
+ }
+ return null;
+}
+// Prijedlog za povezivanje: ista imena ili isto prezime (za radnike koje arhiva ne pronalazi).
+export function similarNames(name){
+ if(!archive?.workers)return [];
+ const parts=String(name||'').trim().split(/\s+/).map(norm).filter(Boolean);if(!parts.length)return [];
+ return archive.workers.map(w=>w.name).filter(n=>{const q=String(n).trim().split(/\s+/).map(norm);return norm(n)!==norm(name)&&(q[0]===parts[0]||q[q.length-1]===parts[parts.length-1])});
 }
 export function settings(){return '<section class="panel"><h2>Uvoz arhive 2025.</h2><p>Istorijski podaci nisu javni: privatni JSON uvozi se jednom, samo nakon prijave administratora.</p><form id="histImport"><input type="file" name="file" accept=".json,application/json" required><button type="submit" class="btn primary">Uvezi 2025. i radnike 2026.</button></form></section>'}
 export function display(){
  if(!archive)return '<section class="panel"><h2>Arhiva 2025.</h2><p>Još nije uvezena u Firebase.</p></section>';
  const mm=String(month).padStart(2,'0'),n=new Date(2025,month,0).getDate();
  const dates=Array.from({length:n},(_,i)=>'2025-'+mm+'-'+String(i+1).padStart(2,'0'));
- const cells=archive.workers.map(w=>'<tr><th style="position:sticky;left:0;background:#fff;min-width:165px;text-align:left">'+escape(w.name)+'</th>'+dates.map(day=>{
+ const cells=archive.workers.map(w=>'<tr><th style="position:sticky;left:0;background:#fff;min-width:165px;text-align:left">'+escape(shown(w.name))+'</th>'+dates.map(day=>{
   const type=w.days?.[day]||'',sun=new Date(day+'T12:00:00').getDay()===0,holiday=archive.holidays?.[day];
   const color=type==='O'?'#f2a1a3':type==='L'?'#edd1b5':type==='N'?'#161923':type==='X'||type==='x'?'#f2bfd1':holiday?holiday.includes('Bajram')?'#2db764':'#edc75a':sun?'#285cc5':'#bae5c4';
   const fg=type==='N'||(!type&&sun)?'#fff':'#17252b';
   return '<td style="min-width:27px;height:31px;text-align:center;background:'+color+';color:'+fg+'" title="'+escape(day)+'">'+escape(type||'')+'</td>'
  }).join('')+'<th>'+dates.filter(day=>w.days?.[day]).length+'</th></tr>').join('');
- const summary=archive.workers.map(w=>'<tr><td>'+escape(w.name)+'</td><td>'+w.excelTotal+'</td><td>'+Object.keys(w.days||{}).length+'</td><td>'+w.excelEntitlement+'</td><td>'+w.excelRemaining+'</td></tr>').join('');
+ const summary=archive.workers.map(w=>'<tr><td>'+escape(shown(w.name))+'</td><td>'+w.excelTotal+'</td><td>'+Object.keys(w.days||{}).length+'</td><td>'+w.excelEntitlement+'</td><td>'+w.excelRemaining+'</td></tr>').join('');
  return '<section class="panel"><h2>Arhiva odsustava 2025.</h2><label>Mjesec</label><select id="histMonth">'+months.map((name,i)=>'<option value="'+(i+1)+'"'+(month===i+1?' selected':'')+'>'+name+'</option>').join('')+'</select>'+
  '<p>🟩 Nema upisanog odsustva · 🟥 Odmor · 🟧 Lični razlozi · 🟦 Nedjelja · ⬛ Neplaćeno</p><div style="max-width:100%;overflow-x:auto"><table class="simpletable" style="width:max-content;min-width:100%;font-size:12px"><thead><tr><th>Radnik</th>'+dates.map((_,i)=>'<th>'+(i+1)+'</th>').join('')+'<th>∑</th></tr></thead><tbody>'+cells+'</tbody></table></div><p class="smalltext">Zelena znači samo da u Excelu nema označenog odsustva, a ne potvrdu prisustva.</p></section>'+
  '<section class="panel"><h2>Godišnji pregled 2025.</h2><div class="tablewrap"><table class="simpletable"><thead><tr><th>Radnik</th><th>Ukupno u Excelu</th><th>Po važećim datumima</th><th>Po staroj tabeli</th><th>Preostalo</th></tr></thead><tbody>'+summary+'</tbody></table></div><p class="smalltext">Zadržana su originalna zbirna stanja, uključujući napomene o nepostojećem 31. junu i Sanelinom odmoru 15. novembra.</p></section>';

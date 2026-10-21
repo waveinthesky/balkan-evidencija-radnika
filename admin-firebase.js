@@ -1,4 +1,4 @@
-import * as HIST from './history-2025.js?v=20261019carry14';
+import * as HIST from './history-2025.js?v=20261020alias18';
 import * as FSX from 'https://www.gstatic.com/firebasejs/11.10.0/firebase-firestore.js';
 import {auth,db} from './firebase-shared.js';
 import {ADMIN_UID} from './firebase-config.js';
@@ -80,7 +80,7 @@ document.addEventListener('click',event=>{
  printWin.document.close();printWin.focus();setTimeout(()=>printWin.print(),150);
 });
 
-window.BALKAN_ARCHIVE={display:()=>HIST.display(),getCarryover:(name)=>HIST.carryoverFor2026(name),isLoaded:()=>HIST.isLoaded(),workerNames:()=>HIST.workerNames()};
+window.BALKAN_ARCHIVE={display:()=>{HIST.setAliases(api.state()?.employees);return HIST.display()},getCarryover:(name,aliases)=>HIST.carryoverFor2026(name,aliases),isLoaded:()=>HIST.isLoaded(),workerNames:()=>HIST.workerNames(),similarNames:(name)=>HIST.similarNames(name)};
 HIST.bindUI();
 const columns=api.collections();
 const cloudRefs=c=>collection(db,'records',c,'items');

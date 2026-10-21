@@ -1192,7 +1192,7 @@ function yearLeaveSummary(e,year){
  const g=leaveGrant(e.id,year);
  const quotaRaw=g?.days??e.leaveQuotaByYear?.[year],quota=quotaRaw==null?null:Number(quotaRaw);
  const carryRaw=e.leaveCarryByYear?.[year];
- const archiveCarry=year===2026&&carryRaw==null?window.BALKAN_ARCHIVE?.getCarryover?.(e.name):null;
+ const archiveCarry=year===2026&&carryRaw==null?window.BALKAN_ARCHIVE?.getCarryover?.(e.name,e.archiveNames):null;
  const carry=carryRaw==null?(archiveCarry?.balance??0):Number(carryRaw);
  const provisional=carryRaw==null&&!!archiveCarry;
  const official=leaveCount(e.id,year);
@@ -1930,7 +1930,7 @@ settings=function(){return _annualPriorGuide()
 const _balkanLeaveSummaryBeforeCarryAudit=yearLeaveSummary;
 function balkanCarryAudit(employee,year,asOf=today()){
  const y=Number(year),explicit=employee.leaveCarryByYear?.[y];
- const archive=y===2026&&explicit==null?window.BALKAN_ARCHIVE?.getCarryover?.(employee.name):null;
+ const archive=y===2026&&explicit==null?window.BALKAN_ARCHIVE?.getCarryover?.(employee.name,employee.archiveNames):null;
  const value=explicit==null?(archive?.balance??0):explicit;
  const raw=Number.isFinite(Number(value))?Number(value):0;
  const defaultDeadline=ymd(y,6,30);
@@ -2526,6 +2526,8 @@ SYNC_NAMES.push('scanTrash');
 .lv-csrc{font-size:13px;color:#5d6b80;margin:6px 0 10px}
 .lv-cr{display:flex;justify-content:space-between;gap:10px;padding:7px 0;border-bottom:1px solid #eef1f5;font-size:14px}
 .lv-cr b{font-variant-numeric:tabular-nums}.lv-cr b.pos{color:#1f7a55}.lv-cr b.neg{color:#b42a40}
+.lv-link{display:flex;flex-wrap:wrap;gap:6px;align-items:center;background:#eef3fa;border-radius:10px;padding:8px 10px;margin:6px 0;font-size:13px}
+.lv-link small{flex-basis:100%;color:#5d6b80}
 .lv-miss{color:#a8203a}
 .lv-cv{font-weight:800;font-variant-numeric:tabular-nums}.lv-cv.pos{color:#1f7a55}.lv-cv.neg{color:#b42a40}
 .lv-table td small{display:block;font-size:11px;color:#738198}.lv-table td small.lv-miss{color:#a8203a}
@@ -2570,6 +2572,7 @@ SYNC_NAMES.push('scanTrash');
 .lv-decs{display:grid;gap:10px}
 .lv-dec{display:grid;grid-template-columns:auto 1fr auto;gap:14px;align-items:center;border:1px solid #e3e8ef;border-radius:12px;padding:12px 14px}
 .lv-dec.cx{opacity:.6;background:#f7f8fa}
+.lv-trash{margin-top:12px}.lv-trash summary{cursor:pointer;font-weight:700;color:#5d6b80}.lv-trash .lv-dec{margin-top:8px;opacity:.85}
 .lv-dec .no{font-weight:800;color:#14366b;background:#eaf1fb;border-radius:8px;padding:8px 10px;font-variant-numeric:tabular-nums}
 .lv-dec .per{font-weight:700}
 .lv-dec .meta{font-size:13px;color:#5d6b80}
@@ -2616,6 +2619,23 @@ SYNC_NAMES.push('scanTrash');
 .lv-preview{position:sticky;top:0}
 .lv-auto{background:#f7f9fd;border-color:#cfdcf0}
 .lv-chk{display:flex;gap:8px;align-items:flex-start;font-size:14px;margin:6px 0;cursor:pointer}
+.modal:has(.bk-form){max-width:min(860px,96vw)!important;width:96vw}
+.bk-bulk{background:#fff!important;color:#14366b!important;border:1.5px solid #9db7dc!important;font-weight:700}
+.bk-bulk:hover{background:#eef3fa!important}
+.bk-head{display:flex;justify-content:space-between;align-items:center;gap:10px;margin-bottom:8px;font-size:14px}
+.bk-head span{display:flex;gap:6px}
+.bk-list{display:grid;gap:6px;max-height:340px;overflow:auto}
+.bk-row{display:grid;grid-template-columns:22px 70px 1fr auto auto;gap:10px;align-items:center;border:1px solid #e3e8ef;border-radius:10px;padding:9px 12px;cursor:pointer;font-size:14px}
+.bk-row input{width:18px;height:18px}
+.bk-row.off{opacity:.5;background:#f7f8fa}
+.bk-no{color:#14366b;font-variant-numeric:tabular-nums}
+.bk-date{grid-column:3/5;font-size:12px;color:#5d6b80}
+.bk-row{grid-template-columns:22px 70px 1fr auto auto!important}
+.bk-eye{grid-column:5;justify-self:end;padding:4px 10px!important}
+.bk-eye.on{background:#14366b!important;color:#fff!important}
+.bk-prev{margin-top:12px;border:1px solid #cfdcf0;border-radius:12px;padding:10px;background:#f7f9fd}
+.bk-prev-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;font-size:14px}
+.bk-prev .lv-paper{margin:0 auto}
 .lv-chk input{width:18px;height:18px;margin-top:1px}
 .lv-preview .cap{font-size:12px;font-weight:700;color:#5d6b80;margin-bottom:6px}
 .lv-paper{width:520px;height:736px;overflow:hidden;border:1px solid #d5dde8;border-radius:6px;background:#fff;box-shadow:0 6px 20px #14263d1f}
@@ -2784,12 +2804,13 @@ SYNC_NAMES.push('scanTrash');
   paintAuto();
   document.getElementById('wzPaper').innerHTML=rjHtml(decisionDraft(),f.elements.jmb.value).replace('class="rj-page"','class="rj-page rj-mark"');
  }
- function openWizard(empId){
+ function openWizard(empId,pre){
   ensureV2();
   const active=S.employees.filter(e=>!e.isTest&&!e.hidden&&e.active!==false).sort((a,b)=>a.name.localeCompare(b.name,'bs'));
   const start=empId||leaveEmployeeId||active[0]?.id;
   const t=today();
   wz={empId:start,year:leaveYear,from:'',to:'',month:t.slice(0,7)};
+  if(pre){wz.year=Number(pre.year)||wz.year;wz.from=pre.from||'';wz.to=pre.to||'';if(pre.from)wz.month=pre.from.slice(0,7)}
   const e=wzEmployee()||{};
   const yearDecs=S.leaveDecisions.filter(x=>Number(x.year)===Number(leaveYear)).length;
   modal('Novo rješenje o godišnjem odmoru',
@@ -2813,6 +2834,10 @@ SYNC_NAMES.push('scanTrash');
    '</div>'+
    '<aside class="lv-preview"><div class="cap">Pregled rješenja (žuto = automatski popunjeno)</div><div class="lv-paper" id="wzPaper"></div></aside>'+
    '</form>');
+  if(pre){const f=document.getElementById('leaveDecisionForm');
+   for(const k of ['position','residence','contract'])if(pre[k])f.elements[k].value=pre[k];
+   if(pre.number){f.elements.number.value=pre.number;f.elements.number.dataset.touched='1'}
+   f.elements.year.value=wz.year;const yi=f.querySelector('[data-wz-year]');if(yi)yi.value=wz.year}
   paint();
  }
  window.balkanOpenLeaveWizard=openWizard;
@@ -2880,8 +2905,9 @@ SYNC_NAMES.push('scanTrash');
   if(y!==2026)return {kind:'none',text:'Prenos iz '+(y-1)+'. nije unesen'};
   const A=window.BALKAN_ARCHIVE;
   if(!A?.isLoaded?.())return {kind:'none',text:'Arhiva 2025. nije uvezena – unesi prenos ručno'};
-  if(a.provisional)return {kind:'archive',text:'Iz arhive 2025. (Excel) – nije potvrđeno'};
-  return {kind:'none',text:'Nije pronađen u arhivi 2025. pod imenom „'+e.name+'“ – unesi ručno'};
+  if(a.provisional){const r=A.getCarryover?.(e.name,e.archiveNames);
+   return {kind:'archive',text:'Iz arhive 2025. (Excel)'+(r?.archiveName&&r.archiveName!==e.name?' – u arhivi kao „'+r.archiveName+'“':'')+' – nije potvrđeno'}}
+  return {kind:'none',text:'Nije pronađen u arhivi 2025. pod imenom „'+e.name+'“ – poveži ili unesi ručno',similar:A.similarNames?.(e.name)||[]};
  }
  function lvBalance(e,year){
   const y=Number(year),s=yearLeaveSummary(e,y),a=balkanCarryAudit(e,y);
@@ -2909,10 +2935,12 @@ SYNC_NAMES.push('scanTrash');
    '<div class="lv-cr"><span>Isteklo '+dl(b.carryDeadline)+' (više se ne može koristiti)</span><b class="'+(b.carryExpired?'neg':'')+'">'+b.carryExpired+'</b></div>'+
    '<div class="lv-cr"><span>Još važi</span><b class="'+(b.carryActive?'pos':'')+'">'+b.carryActive+'</b></div>';
   else if(b.carry<0)rows='<p>U '+prev+'. radnik je iskoristio <b>'+(-b.carry)+' '+(b.carry===-1?'dan':'dana')+' više</b> nego što je imao pravo. To se oduzima od prava za '+y+'.</p>';
-  else rows=src.kind==='none'?'<p class="lv-miss">'+esc(src.text)+'.</p>':'<p>Nema prenosa: sve iz '+prev+'. je iskorišteno.</p>';
+  else rows=src.kind==='none'?'':'<p>Nema prenosa: sve iz '+prev+'. je iskorišteno.</p>';
   return '<div class="panel lv-carry"><h2>Prenos iz '+prev+'.</h2>'+
    '<div class="lv-cbig '+(b.carry>0?'pos':b.carry<0?'neg':'')+'">'+signed(b.carry)+'<span>'+(b.carry>0?'dana više (neiskorišteno)':b.carry<0?'dana manje (prekoračeno)':'dana')+'</span></div>'+
-   '<div class="lv-csrc">'+esc(src.text)+'</div>'+rows+
+   '<div class="lv-csrc'+(src.kind==='none'&&!b.carry?' lv-miss':'')+'">'+esc(src.text)+'</div>'+rows+
+   (src.similar?.length?'<div class="lv-link"><b>Da li je to ista osoba u arhivi 2025.?</b>'+src.similar.map(n=>'<button class="btn small primary" type="button" data-archive-link="'+esc(e.id)+'" data-archive-name="'+esc(n)+'">Poveži s „'+esc(n)+'“</button>').join('')+'<small>Arhiva se ne mijenja; program samo zapamti staro ime ovog radnika iz arhive 2025.</small></div>':'')+
+   ((e.archiveNames||[]).length?'<div class="lv-hint">Ime u arhivi 2025.: <b>'+esc(e.archiveNames.join(', '))+'</b> <button class="btn small" type="button" data-archive-unlink="'+esc(e.id)+'">Ukloni vezu</button></div>':'')+
    '<div class="lv-actions" style="margin-top:10px"><button class="btn small" type="button" data-carry-edit="'+esc(e.id)+'">✎ Uredi prenos</button>'+
    (src.kind==='archive'?'<button class="btn small primary" type="button" data-carry-confirm="'+esc(e.id)+'">✓ Potvrdi iz arhive</button>':'')+'</div>'+
    '<p class="lv-hint">Pozitivan prenos važi do 30. juna (čl. 85 st. 3); duže samo zbog bolovanja ili porodiljskog odsustva (čl. 85 st. 4–5).</p></div>';
@@ -2955,6 +2983,27 @@ SYNC_NAMES.push('scanTrash');
   else if(confirm('Ukloniti ručni unos i koristiti vrijednost iz arhive 2025.?'))setCarry(e,null,'','','Prenos vraćen na arhivu');
  },true);
  window.balkanLeaveBalance=lvBalance;
+ // --- veza s arhivom 2025. (staro ime radnika) ---
+ document.addEventListener('click',async ev=>{
+  const l=ev.target.closest('[data-archive-link],[data-archive-unlink]');if(!l)return;
+  ev.preventDefault();ev.stopImmediatePropagation();if(!unlocked)return;
+  const e=S.employees.find(x=>x.id===(l.dataset.archiveLink||l.dataset.archiveUnlink));if(!e)return;
+  if(l.dataset.archiveLink){
+   const n=l.dataset.archiveName;
+   if(!confirm('Povezati „'+e.name+'“ s „'+n+'“ iz arhive 2025.?\n\nPrenos iz 2025. i arhiva odsustava biće prikazani za ovog radnika. Podaci u arhivi se ne mijenjaju.'))return;
+   e.archiveNames=[...new Set([...(e.archiveNames||[]),n])];audit('Povezan radnik s arhivom 2025.',e.name+' = „'+n+'“');
+  }else{
+   if(!confirm('Ukloniti vezu s arhivom 2025. za '+e.name+'?'))return;
+   e.archiveNames=[];audit('Uklonjena veza s arhivom 2025.',e.name);
+  }
+  try{await save();render()}catch(err){alert('Nije sačuvano: '+err.message)}
+ },true);
+ // Promjena imena radnika: staro ime se pamti, da veza s arhivom 2025. i prenos ne nestanu.
+ document.addEventListener('submit',ev=>{
+  const f=ev.target;if(f.getAttribute('id')!=='workerForm')return; // obrazac ima polje "id", pa f.id nije naziv obrasca
+  const id=f.elements.id?.value,e=id&&S.employees.find(x=>x.id===id),nm=String(f.elements.name?.value||'').trim();
+  if(e&&nm&&e.name&&nm!==e.name)e.archiveNames=[...new Set([...(e.archiveNames||[]),e.name])];
+ },true);
  // Provjera neoznačenih dana broji iste dane kao "Nije radio (N)": samo završene dane (do juče).
  const _reviewDays=likelyLeaveReviewDays;
  likelyLeaveReviewDays=function(e,y){return (_reviewDays(e,y)||[]).filter(d=>String(d.date||d)<today())};
@@ -3029,6 +3078,8 @@ SYNC_NAMES.push('scanTrash');
   const box=document.getElementById('wzAuto');if(!box||!wz)return;
   wz.auto=wz.auto||{N:false,GO:false,dateMode:'before30'};
   const p=autoPlan();if(!p){box.innerHTML='';return}
+  box.innerHTML='<h3><em>★</em>Rješenja za sve dane iz evidencije</h3><p class="lv-hint" style="margin:0 0 8px">Za dane kada radnik nije radio (A) ili je već bio na godišnjem bez rješenja (B), program napravi sva rješenja odjednom.</p><button type="button" class="btn bk-bulk" data-bulk-open="'+esc(p.e.id)+'">🖨 Otvori: rješenja za sve dane (A '+p.nDays.length+' · B '+p.goDays.length+')</button>';
+  return;
   const a=wz.auto,count=p.periods.reduce((s,x)=>s+x.days.length,0);
   const rows=p.periods.map(x=>'<tr><td><b>'+esc(x.number)+'</b></td><td>'+esc(dl(x.from))+(x.to!==x.from?' – '+esc(dl(x.to)):'')+'</td><td>'+x.days.length+'</td><td>'+(x.kind==='N'?'<span class="badge N">N</span>':'<span class="badge GO">GO</span>')+'</td><td>'+esc(dl(x.issuedAt))+'</td></tr>').join('');
   const back=p.periods.some(x=>x.backdated);
@@ -3068,7 +3119,7 @@ SYNC_NAMES.push('scanTrash');
   closeModal();route='godisnji';render();
   printMany(created,jmb);
  }
- function printMany(list,jmb){
+ function printMany(list,jmb,opts={}){
   if(!list.length)return;
   const w=window.open('','_blank','width=900,height=1000');
   if(!w){alert('Dozvoli otvaranje prozora za štampu u pregledniku.');return}
@@ -3076,7 +3127,8 @@ SYNC_NAMES.push('scanTrash');
   w.document.open();
   w.document.write('<!DOCTYPE html><html lang="bs"><head><meta charset="utf-8"><title>Rješenja '+esc(list.map(d=>d.number).join(', '))+'</title><style>'+css+
    '@page{size:A4;margin:0}body{margin:0;background:#e8edf3;font-family:Arial,sans-serif}.bar{position:sticky;top:0;z-index:2;background:#14263d;color:#fff;display:flex;gap:12px;align-items:center;justify-content:center;padding:12px}.bar button{background:#2a62b8;color:#fff;border:0;border-radius:8px;padding:10px 16px;font:700 14px Arial;cursor:pointer}.sheet{margin:18px auto;width:210mm;box-shadow:0 8px 30px #0003;break-after:page;page-break-after:always}.sheet:last-child{break-after:auto;page-break-after:auto}@media print{body{background:#fff}.bar{display:none}.sheet{margin:0;box-shadow:none}}</style></head><body>'+
-   '<div class="bar"><b>'+list.length+' rješenja · '+esc(list[0].employeeName||'')+'</b><button onclick="window.print()">⎙ Štampaj sva</button><small>Svako rješenje je na posebnoj stranici.</small></div>'+
+   (opts.draft?'<style>.sheet{position:relative}.sheet::before{content:"NACRT – NIJE IZDATO";position:absolute;top:40%;left:0;right:0;text-align:center;font:800 54px Arial;color:#d1253d22;transform:rotate(-24deg);pointer-events:none}.bar{background:#8a5a00!important}</style>':'')+
+   '<div class="bar"><b>'+(opts.draft?'NACRT – pregled prije izdavanja · ':'')+list.length+' rješenja · '+esc(list[0].employeeName||'')+'</b>'+(opts.draft?'<small>Ništa još nije sačuvano. Zatvori ovaj prozor i klikni „OK – izdaj i štampaj“.</small>':'<button onclick="window.print()">⎙ Štampaj sva</button><small>Svako rješenje je na posebnoj stranici.</small>')+'</div>'+
    list.map(d=>'<div class="sheet">'+rjHtml(d,jmb)+'</div>').join('')+'</body></html>');
   w.document.close();w.focus();
  }
@@ -3106,6 +3158,174 @@ SYNC_NAMES.push('scanTrash');
  modalRoot2.addEventListener('click',ev=>{
   const b=ev.target.closest('[data-wz-auto-go]');if(!b)return;
   ev.preventDefault();ev.stopImmediatePropagation();issueAuto();
+ },true);
+ // ---------------- RJEŠENJA ZA SVE DANE (posebno dugme) ----------------
+ let bk=null;
+ function bulkPlan(){
+  const e=S.employees.find(x=>x.id===bk.empId),y=Number(bk.year);if(!e)return null;
+  const nDays=evidenceDays(e,y,'N'),goDays=evidenceDays(e,y,'GO');
+  let periods=[];
+  if(bk.N)periods.push(...groupPeriods(e,y,nDays,'N'));
+  if(bk.GO)periods.push(...groupPeriods(e,y,goDays,'GO'));
+  periods.sort((p,q)=>p.from.localeCompare(q.from));
+  for(const p of periods){p.key=p.kind+'|'+p.from;p.on=!bk.off.has(p.key);p.issuedAt=bk.dateMode==='today'?today():addDays(p.from,-30);p.backdated=p.issuedAt<today()}
+  let n=nextGoNumber();for(const p of periods)p.number=p.on?'GO-'+(n++):'—';
+  const chosen=periods.filter(p=>p.on),bal=lvBalance(e,y);
+  const newN=chosen.filter(p=>p.kind==='N').reduce((s,p)=>s+p.days.length,0);
+  return {e,y,nDays,goDays,periods,chosen,bal,newN,over:bal.remaining!=null&&newN>bal.remaining,grant:leaveGrant(e.id,y)};
+ }
+ function paintBulk(){
+  const box=document.getElementById('bkPlan');if(!box||!bk)return;
+  const p=bulkPlan();if(!p){box.innerHTML='';return}
+  const days=p.chosen.reduce((s,x)=>s+x.days.length,0);
+  const rows=p.periods.map(x=>'<label class="bk-row'+(x.on?'':' off')+'"><input type="checkbox" data-bulk-row="'+esc(x.key)+'"'+(x.on?' checked':'')+'>'+
+   '<b class="bk-no">'+esc(x.number)+'</b><span>'+esc(dl(x.from))+(x.to!==x.from?' – '+esc(dl(x.to)):'')+'</span><span>'+x.days.length+' '+(x.days.length===1?'dan':'dana')+'</span>'+
+   (x.kind==='N'?'<span class="badge N">A · nije radio/la</span>':'<span class="badge GO">B · godišnji</span>')+
+   '<span class="bk-date">'+(x.days.length>1?'dani: '+x.days.map(d=>Number(d.slice(8))+'.'+Number(d.slice(5,7))+'.').join(', ')+' · ':'')+'doneseno i dostavljeno '+esc(dl(x.issuedAt))+'</span>'+
+   '<button type="button" class="btn small bk-eye'+(bk.preview===x.key?' on':'')+'" data-bulk-prev="'+esc(x.key)+'" title="Pregled ovog rješenja">👁 Pregled</button></label>').join('');
+  box.innerHTML=
+   (!p.grant?'<div class="lv-sum bad">Radnik nema utvrđen godišnji fond za '+p.y+'. Prvo klikni „Odredi godišnji fond“.</div>':'')+
+   (!bk.N&&!bk.GO?'<div class="lv-sum">Čekiraj <b>A</b>, <b>B</b> ili oba.</div>':
+    p.periods.length?'<div class="bk-head"><b>'+p.periods.length+' '+(p.periods.length===1?'rješenje':'rješenja')+'</b> – skini kvačicu kod onih koja ne želiš.<span><button type="button" class="btn small" data-bulk-all="1">Sve</button><button type="button" class="btn small" data-bulk-none="1">Ništa</button><button type="button" class="btn small" data-bulk-draft="1"'+(p.chosen.length?'':' disabled')+'>👁 Pregledaj sva izabrana</button></span></div><div class="bk-list">'+rows+'</div>'+bulkPreview(p):
+    '<div class="lv-sum">Nema dana za izabrano. Radnik nema '+(bk.N?'dana bez prijave':'')+(bk.N&&bk.GO?' ni ':'')+(bk.GO?'GO dana bez rješenja':'')+' u '+p.y+'.</div>')+
+   (p.over?'<div class="lv-sum bad">Izabrano je '+p.newN+' dana bez prijave (A), a preostalo je samo '+p.bal.remaining+' dana godišnjeg. Skini kvačicu kod nekih rješenja.</div>':'')+
+   (p.chosen.some(x=>x.backdated)&&bk.dateMode!=='today'?'<div class="lv-sum" style="background:#fff7e6;color:#5c4300;margin-top:8px"><b>Napomena:</b> za dane koji su već prošli, „30 dana prije“ je datum raniji od današnjeg. Zakonito je i „Današnji datum“ uz saglasnost zaposlenog (čl. 83 st. 3).</div>':'');
+  const go=document.getElementById('bkGo');
+  go.disabled=!p.grant||!p.chosen.length||p.over;
+  go.textContent=p.chosen.length?'OK – izdaj i štampaj '+p.chosen.length+' '+(p.chosen.length===1?'rješenje':'rješenja')+' ('+days+' '+(days===1?'dan':'dana')+')':'OK – izdaj i štampaj';
+  const cnt=document.getElementById('bkCounts');
+  if(cnt)cnt.innerHTML='<label class="lv-chk"><input type="checkbox" data-bulk-kind="N"'+(bk.N?' checked':'')+'><span><b>A) Nije radio/la (N)</b> – '+p.nDays.length+' '+(p.nDays.length===1?'dan':'dana')+' bez prijave u '+p.y+'.</span></label>'+
+   '<label class="lv-chk"><input type="checkbox" data-bulk-kind="GO"'+(bk.GO?' checked':'')+'><span><b>B) Godišnji odmor iskorišćeno</b> – '+p.goDays.length+' '+(p.goDays.length===1?'dan označen':'dana označenih')+' kao GO bez rješenja</span></label>';
+ }
+ function bulkDraft(p,x){
+  const f=document.getElementById('bulkLeaveForm');
+  return {id:'draft-'+x.key,empId:p.e.id,employeeName:p.e.name,year:p.y,number:x.number,from:x.from,to:x.to,days:x.days,
+   position:f?.elements.position.value||p.e.position||'',residence:f?.elements.residence.value||p.e.residence||'',contract:f?.elements.contract.value||p.e.contract||'',
+   entitlementAtIssue:p.grant?.days??null,issuedAt:x.issuedAt,deliveredAt:x.issuedAt,templateSnapshot:S.leaveTemplates.find(t=>t.id==='annual-main')};
+ }
+ function bulkPreview(p){
+  const x=p.periods.find(q=>q.key===bk.preview);if(!x)return '';
+  const jmb=document.getElementById('bulkLeaveForm')?.elements.jmb.value||'';
+  return '<div class="bk-prev"><div class="bk-prev-head"><b>Pregled: '+esc(x.on?x.number:'(isključeno)')+' · '+esc(dl(x.from))+(x.to!==x.from?' – '+esc(dl(x.to)):'')+'</b><button type="button" class="btn small" data-bulk-prev="'+esc(x.key)+'">Zatvori pregled</button></div>'+
+   '<div class="lv-paper">'+rjHtml(bulkDraft(p,x),jmb).replace('class="rj-page"','class="rj-page rj-mark"')+'</div></div>';
+ }
+ function openBulk(empId){
+  if(!unlocked)return alert('Samo administrator može izdavati rješenja.');
+  const e=S.employees.find(x=>x.id===(empId||leaveEmployeeId));if(!e)return alert('Prvo izaberi radnika.');
+  bk={empId:e.id,year:Number(leaveYear),N:false,GO:false,dateMode:'before30',off:new Set(),preview:null};
+  modal('Rješenja za sve dane – '+e.name,
+   '<form id="bulkLeaveForm" class="bk-form" autocomplete="off">'+
+   '<section class="lv-step"><h3><em>1</em>Šta želiš da program uradi?</h3><div id="bkCounts"></div>'+
+    '<div class="lv-row" style="margin-top:8px"><div><label>Godina</label><input type="number" data-bulk-year="1" min="2000" max="2100" value="'+bk.year+'"></div>'+
+    '<div><label>Datum donošenja i dostave</label><select data-bulk-date="1"><option value="before30" selected>30 dana prije početka odmora</option><option value="today">Današnji datum ('+esc(dl(today()))+')</option></select></div></div></section>'+
+   '<section class="lv-step"><h3><em>2</em>Provjeri rješenja</h3><div id="bkPlan"></div></section>'+
+   '<section class="lv-step"><h3><em>3</em>Podaci za sva rješenja</h3><div class="lv-row">'+
+    '<div><label>Radno mjesto</label><input name="position" value="'+esc(e.position||'')+'"></div>'+
+    '<div><label>Mjesto (prebivalište)</label><input name="residence" value="'+esc(e.residence||'')+'"></div>'+
+    '<div><label>Radni odnos</label><select name="contract"><option value="na određeno vrijeme"'+(e.contract==='na neodređeno vrijeme'?'':' selected')+'>na određeno vrijeme</option><option value="na neodređeno vrijeme"'+(e.contract==='na neodređeno vrijeme'?' selected':'')+'>na neodređeno vrijeme</option></select></div>'+
+    '<div><label>JMB (ne čuva se)</label><input name="jmb" maxlength="25" inputmode="numeric"></div></div></section>'+
+   '<div class="modalfoot"><button type="button" class="btn" data-act="close-modal">Odustani</button><button type="button" class="btn primary lv-new" id="bkGo" data-bulk-go="1" disabled>OK – izdaj i štampaj</button></div></form>');
+  paintBulk();
+ }
+ window.balkanOpenBulkDecisions=openBulk;
+ async function issueBulk(){
+  const p=bulkPlan(),f=document.getElementById('bulkLeaveForm');if(!p||!p.chosen.length||!p.grant||p.over)return;
+  const e=p.e,tpl=S.leaveTemplates.find(x=>x.id==='annual-main'),created=[];
+  const position=f.elements.position.value,residence=f.elements.residence.value,contract=f.elements.contract.value;
+  for(const x of p.chosen){
+   let days;try{days=leaveDays(x.from,x.to,p.grant.weekdays,[],e.id)}catch(err){alert(err.message);return}
+   if(!days.length)continue;
+   const replaced=S.overrides.filter(o=>o.empId===e.id&&days.includes(o.date)&&['GO','N'].includes(o.status));
+   S.overrides=S.overrides.filter(o=>!replaced.includes(o));
+   const notice=Math.round((new Date(x.from+'T12:00:00Z')-new Date(x.issuedAt+'T12:00:00Z'))/86400000);
+   const dec={id:uid(),empId:e.id,employeeName:e.name,year:p.y,number:x.number,from:x.from,to:x.to,days,excluded:[],status:'issued',
+    issuedAt:x.issuedAt,deliveredAt:x.issuedAt,shortNotice:notice<30,position,residence,contract,entitlementAtIssue:p.grant.days,
+    templateSnapshot:structuredClone(tpl),createdAt:new Date().toISOString(),source:x.kind==='N'?'evidencija-N':'evidencija-GO',
+    replacedOverrides:JSON.parse(JSON.stringify(replaced))};
+   S.leaveDecisions.push(dec);created.push(dec);
+  }
+  for(const d of created)d.remainingAtIssue=lvBalance(e,p.y).remaining;
+  Object.assign(e,{position,residence,contract});
+  audit('Izdata rješenja za sve dane',e.name+': '+created.map(d=>d.number+' '+d.from+'–'+d.to+' ('+d.days.length+')').join(', '));
+  try{await save()}catch(err){alert('Nije sačuvano: '+err.message);return}
+  const jmb=f.elements.jmb.value||'';jmbCache={empId:e.id,jmb};
+  closeModal();route='godisnji';leaveEmployeeId=e.id;leaveYear=p.y;render();
+  printMany(created,jmb);
+  if(typeof window.bkToast==='function')window.bkToast('Sačuvano '+created.length+' rješenja u „Rješenja – '+e.name+'“');
+ }
+ const bulkState=ev=>{
+  if(!bk||!document.getElementById('bulkLeaveForm'))return;
+  const t=ev.target;let repaint=false;
+  if(t.matches('[data-bulk-kind]')){bk[t.dataset.bulkKind]=t.checked;repaint=true}
+  if(t.matches('[data-bulk-row]')){t.checked?bk.off.delete(t.dataset.bulkRow):bk.off.add(t.dataset.bulkRow);repaint=true}
+  if(t.matches('[data-bulk-date]')){bk.dateMode=t.value;repaint=true}
+  if(t.matches('[data-bulk-year]')&&ev.type==='change'){bk.year=Number(t.value)||bk.year;bk.off.clear();repaint=true}
+  if(repaint)setTimeout(paintBulk,0);
+ };
+ document.getElementById('modal').addEventListener('change',bulkState,true);
+ document.addEventListener('click',ev=>{
+  const o=ev.target.closest('[data-bulk-open],[data-bulk-go],[data-bulk-all],[data-bulk-none],[data-bulk-prev],[data-bulk-draft]');if(!o)return;
+  ev.preventDefault();ev.stopImmediatePropagation();
+  if(o.dataset.bulkOpen!==undefined)return openBulk(o.dataset.bulkOpen||(document.querySelector('#leaveDecisionForm [name=empId]')?.value)||leaveEmployeeId);
+  if(o.dataset.bulkGo)return issueBulk();
+  if(o.dataset.bulkAll){bk.off.clear();paintBulk();return}
+  if(o.dataset.bulkNone){for(const p of bulkPlan()?.periods||[])bk.off.add(p.key);paintBulk();return}
+  if(o.dataset.bulkPrev){bk.preview=bk.preview===o.dataset.bulkPrev?null:o.dataset.bulkPrev;paintBulk();
+   setTimeout(()=>document.querySelector('.bk-prev')?.scrollIntoView({behavior:'smooth',block:'nearest'}),30);return}
+  if(o.dataset.bulkDraft){const p=bulkPlan();if(!p?.chosen.length)return;
+   printMany(p.chosen.map(x=>bulkDraft(p,x)),document.getElementById('bulkLeaveForm').elements.jmb.value||'',{draft:true})}
+ },true);
+ // ---------------- BRISANJE / ISPRAVKA RJEŠENJA (s vraćanjem) ----------------
+ SYNC_NAMES.push('leaveTrash');
+ const ltrash=()=>{if(!Array.isArray(S.leaveTrash))S.leaveTrash=[];return S.leaveTrash};
+ function releaseOverrides(d){
+  if(d.status!=='issued'||!d.replacedOverrides?.length||d.overridesRestored)return;
+  for(const o of d.replacedOverrides)if(!S.overrides.some(x=>x.empId===o.empId&&x.date===o.date&&x.locId===o.locId))S.overrides.push(o);
+ }
+ async function deleteDecision(id,fix){
+  const d=S.leaveDecisions.find(x=>x.id===id);if(!d)return;
+  const msg=fix?'Ispraviti rješenje '+d.number+' ('+dl(d.from)+' – '+dl(d.to)+')?\n\nStaro rješenje ide u „Obrisana rješenja“ (može se vratiti), a otvara se obrazac s istim podacima da ga ispraviš i ponovo izdaš.'
+   :'Obrisati rješenje '+d.number+' ('+dl(d.from)+' – '+dl(d.to)+', '+(d.days||[]).length+' dana)?\n\nDani se vraćaju kakvi su bili prije rješenja. Rješenje ide u „Obrisana rješenja“ i može se vratiti.';
+  if(!confirm(msg))return;
+  releaseOverrides(d);
+  S.leaveDecisions=S.leaveDecisions.filter(x=>x.id!==id);
+  ltrash().unshift({id:uid(),deletedAt:new Date().toISOString(),reason:fix?'Ispravka':'Brisanje',decision:JSON.parse(JSON.stringify(d))});
+  audit(fix?'Rješenje otvoreno za ispravku':'Obrisano rješenje',d.number+' · '+d.employeeName+' · '+d.from+'–'+d.to);
+  try{await save()}catch(err){alert('Nije sačuvano: '+err.message);return}
+  render();
+  if(fix)openWizard(d.empId,{from:d.from,to:d.to,year:d.year,number:d.number,position:d.position,residence:d.residence,contract:d.contract});
+ }
+ async function restoreDecision(tid){
+  const t=ltrash().find(x=>x.id===tid);if(!t)return;
+  const d=JSON.parse(JSON.stringify(t.decision));
+  if(d.status==='issued'){
+   const clash=(d.days||[]).filter(x=>existingLeaveDay(d.empId,x));
+   if(clash.length)return alert('Rješenje se ne može vratiti: za '+clash.slice(0,6).map(dl).join(', ')+' već postoji drugo rješenje (vjerovatno ispravljeno). Prvo obriši novo rješenje.');
+  }
+  let note='';
+  if(S.leaveDecisions.some(x=>x.number===d.number)){const old=d.number;d.number='GO-'+nextGoNumber();note='\nBroj '+old+' je u međuvremenu iskorišten, pa je vraćeno rješenje dobilo broj '+d.number+'.'}
+  if(d.status==='issued'&&d.replacedOverrides?.length){const set=new Set(d.days);S.overrides=S.overrides.filter(o=>!(o.empId===d.empId&&set.has(o.date)&&['GO','N'].includes(o.status)))}
+  S.leaveDecisions.push(d);S.leaveTrash=ltrash().filter(x=>x.id!==tid);
+  audit('Vraćeno obrisano rješenje',d.number+' · '+d.employeeName+' · '+d.from+'–'+d.to);
+  try{await save()}catch(err){alert('Nije sačuvano: '+err.message);return}
+  render();if(note)alert(note.trim());
+ }
+ function trashList(e,y){
+  const items=ltrash().filter(t=>t.decision.empId===e.id&&Number(t.decision.year)===Number(y));
+  if(!items.length)return '';
+  return '<details class="lv-trash"><summary>Obrisana rješenja ('+items.length+') – mogu se vratiti</summary>'+items.map(t=>{const d=t.decision;
+   return '<div class="lv-dec cx"><span class="no">'+esc(d.number)+'</span><div><div class="per">'+esc(dl(d.from))+' – '+esc(dl(d.to))+' · '+(d.days||[]).length+' dana</div><div class="meta">'+esc(t.reason)+' '+esc(dl(t.deletedAt.slice(0,10)))+'</div></div>'+
+    '<div class="actionline"><button class="btn small primary" type="button" data-dec-restore="'+esc(t.id)+'">↺ Vrati</button><button class="btn small" type="button" data-dec-purge="'+esc(t.id)+'">Ukloni trajno</button></div></div>'}).join('')+'</details>';
+ }
+ document.addEventListener('click',ev=>{
+  const b=ev.target.closest('[data-dec-delete],[data-dec-fix],[data-dec-restore],[data-dec-purge]');if(!b)return;
+  ev.preventDefault();ev.stopImmediatePropagation();if(!unlocked)return;
+  if(b.dataset.decDelete)return deleteDecision(b.dataset.decDelete,false);
+  if(b.dataset.decFix)return deleteDecision(b.dataset.decFix,true);
+  if(b.dataset.decRestore)return restoreDecision(b.dataset.decRestore);
+  if(b.dataset.decPurge){const t=ltrash().find(x=>x.id===b.dataset.decPurge);if(!t)return;
+   if(!confirm('Trajno ukloniti rješenje '+t.decision.number+'? Poslije se više ne može vratiti.'))return;
+   S.leaveTrash=ltrash().filter(x=>x.id!==t.id);audit('Trajno uklonjeno rješenje',t.decision.number+' · '+t.decision.employeeName);save().then(render).catch(err=>alert(err.message))}
  },true);
  // ---------------- NOVI IZGLED STRANICE ----------------
  function yearCalendar(e,y){
@@ -3139,11 +3359,11 @@ SYNC_NAMES.push('scanTrash');
    const pct=x=>Math.max(0,Math.min(100,Math.round(x/total*100)));
    const decs=S.leaveDecisions.filter(x=>x.empId===e.id&&Number(x.year)===y).sort((a,b)=>String(b.issuedAt).localeCompare(String(a.issuedAt)));
    const list=decs.map(d=>'<div class="lv-dec'+(d.status==='issued'?'':' cx')+'"><span class="no">'+esc(d.number)+'</span><div><div class="per">'+esc(dl(d.from))+' – '+esc(dl(d.to))+' · '+d.days.length+' radnih dana</div><div class="meta">Doneseno '+esc(dl(d.issuedAt))+' · dostavljeno '+esc(dl(d.deliveredAt))+(d.status==='issued'?'':' · STORNIRANO: '+esc(d.cancelledReason||''))+'</div></div>'+
-    '<div class="actionline"><button class="btn small primary" data-leave-print="'+esc(d.id)+'">Pregled / štampa</button><button class="btn small" data-leave-doc="'+esc(d.id)+'">Word (.docx)</button>'+(d.status==='issued'?'<button class="btn small danger" data-leave-cancel="'+esc(d.id)+'">Storniraj</button>':'')+'</div></div>').join('');
+    '<div class="actionline"><button class="btn small primary" data-leave-print="'+esc(d.id)+'">Pregled / štampa</button><button class="btn small" data-leave-doc="'+esc(d.id)+'">Word (.docx)</button>'+(d.status==='issued'?'<button class="btn small" type="button" data-dec-fix="'+esc(d.id)+'">✎ Ispravi</button><button class="btn small danger" data-leave-cancel="'+esc(d.id)+'">Storniraj</button>':'')+'<button class="btn small" type="button" data-dec-delete="'+esc(d.id)+'" title="Obriši (može se vratiti)">🗑 Obriši</button></div></div>').join('');
    const box=(cls,label,val,sub)=>'<div class="lv-box '+cls+'"><span>'+label+'</span><b>'+val+'</b>'+(sub?'<small>'+sub+'</small>':'')+'</div>';
    const carrySub=bal.carry>0?(bal.carryExpired?'od '+signed(bal.carry)+', isteklo '+bal.carryExpired:bal.carryActive?'važi do '+dl(bal.carryDeadline):'iskorišteno'):bal.carry<0?'prekoračeno u '+(y-1)+'.':bal.carrySource.kind==='none'?'nema podatka':'';
    hero='<section class="panel lv-person lv-main"><div class="lv-head"><div><h2>'+esc(e.name)+'</h2><div class="sub">'+esc(e.position||'Radno mjesto nije upisano')+' · '+esc(locName(assigned(e,today())||e.defaultLocationId))+' · '+esc(e.contract||'vrsta ugovora nije upisana')+'</div></div>'+
-     '<div class="lv-actions"><button class="btn primary lv-new" data-leave-new="'+esc(e.id)+'">+ Novo rješenje</button><button class="btn" data-leave-grant="'+esc(e.id)+'">⚙ Odredi godišnji fond</button></div></div>'+
+     '<div class="lv-actions"><button class="btn primary lv-new" data-leave-new="'+esc(e.id)+'">+ Novo rješenje</button><button class="btn bk-bulk" type="button" data-bulk-open="'+esc(e.id)+'">🖨 Rješenja za sve dane (A / B)</button><button class="btn" data-leave-grant="'+esc(e.id)+'">⚙ Odredi godišnji fond</button></div></div>'+
      (g?'':'<div class="note">Godišnji fond za '+y+'. još nije utvrđen. Klikni „Odredi godišnji fond“.</div>')+
      '<div class="lv-eq">'+box('','Pravo '+y+'.',fmtN(bal.quota))+'<em>+</em>'+
       box('carry '+(bal.carryUsable>0?'pos':bal.carryUsable<0?'neg':''),'Prenos iz '+(y-1)+'.',signed(bal.carryUsable),carrySub)+'<em>=</em>'+
@@ -3160,10 +3380,10 @@ SYNC_NAMES.push('scanTrash');
     '<div class="panel"><h2 style="margin-top:0">Godina '+y+'. – kada je radio, a kada bio na odmoru</h2><div class="lv-year">'+yearCalendar(e,y)+'</div>'+
      '<div class="lv-legend"><span><i style="background:#bfe6d1"></i>Radio</span><span><i style="background:#2a62b8"></i>Godišnji odmor</span><span><i style="background:#f5c3cb"></i>Nije radio</span><span><i style="background:#a68ad9"></i>Bolovanje</span><span><i style="background:#7ccbb1"></i>Praznik</span><span><i style="background:#f1f3f7"></i>Nema evidencije / budući dan</span></div></div>'+
     '</section>'+
-    '<section class="panel"><div class="panel-head"><h2>Rješenja – '+esc(e.name)+' · '+y+'.</h2></div><div class="lv-decs">'+(list||'<div class="lv-empty">Još nema rješenja za ovu godinu. <button class="btn small primary" data-leave-new="'+esc(e.id)+'">+ Novo rješenje</button></div>')+'</div></section>';
+    '<section class="panel"><div class="panel-head"><h2>Rješenja – '+esc(e.name)+' · '+y+'.</h2></div><div class="lv-decs">'+(list||'<div class="lv-empty">Još nema rješenja za ovu godinu. <button class="btn small primary" data-leave-new="'+esc(e.id)+'">+ Novo rješenje</button></div>')+'</div>'+trashList(e,y)+'</section>';
   }
   return pageTitle('Godišnji odmori','Pravo, korišćenje i rješenja o godišnjem odmoru',
-    '<button class="btn" data-leave-template="1">✎ Šablon rješenja</button><button class="btn primary lv-new" data-leave-new="'+esc(e?.id||'')+'">+ Novo rješenje</button>')+
+    '<button class="btn" data-leave-template="1">✎ Šablon rješenja</button><button class="btn bk-bulk" type="button" data-bulk-open="'+esc(e?.id||'')+'">🖨 Rješenja za sve dane</button><button class="btn primary lv-new" data-leave-new="'+esc(e?.id||'')+'">+ Novo rješenje</button>')+
    syncStatus()+
    '<div class="lv-wrap">'+(toolbar?toolbar.outerHTML.replace('class="panel"','class="panel lv-toolbar-panel"'):'')+hero+
    pick('#balkanLiveLeaveSummary')+(e?explainSection(e):pick('#balkanAnnualToday'))+(review?review.outerHTML:'')+pick('#balkanAnnualBulk')+
@@ -3273,4 +3493,4 @@ window.BALKAN_V6={
  backup:()=>doExport(),
  defaultState:()=>defaultState()
 };
-</script><script type="module" src="./admin-firebase.js?v=20261019carry14"></script></body></html>
+</script><script type="module" src="./admin-firebase.js?v=20261020alias18"></script></body></html>
