@@ -134,7 +134,7 @@ function showQueue(){
 // AUTOMATSKI način (podrazumijevano): kasa sama zna da li je DOLAZAK ili ODLAZAK prema
 // posljednjem skeniranju te kartice na ovom računaru. Dugme DOLAZAK/ODLAZAK važi samo za
 // SLJEDEĆE skeniranje (30 s), pa zaboravljeno dugme više ne može blokirati sljedećeg radnika.
-const AUTO_GUARD_MS=10*60000,MODE_HOLD_MS=30000;
+const AUTO_GUARD_MS=10*60000,MODE_HOLD_MS=30000,AUTO_OPEN_MS=14*3600000;
 function setMode(value){
  mode=value;clearTimeout(modeTimer);
  if(value!=='auto')modeTimer=setTimeout(()=>setMode('auto'),MODE_HOLD_MS);
@@ -392,7 +392,9 @@ $('scanForm').addEventListener('submit',e=>{
   const confirming=pendingConfirm&&pendingConfirm.code===code&&now-pendingConfirm.at<CONFIRM_MS;
   if(confirming){selectedMode='out';explicit=true}
   else if(!explicit){
-   selectedMode=last&&last.kind==='in'?'out':'in';
+   // Otvoren dolazak mlađi od 14 h = ODLAZAK (pokriva i noćnu i najdužu smjenu). Stariji otvoren
+   // dolazak znači zaboravljenu odjavu, pa je novo skeniranje DOLAZAK (npr. 14:25 → sutra 07:00).
+   selectedMode=last&&last.kind==='in'&&now-Date.parse(last.at)<AUTO_OPEN_MS?'out':'in';
    // Slučajno dvostruko skeniranje (npr. radnik nije siguran da je prošlo) ne smije postati odlazak.
    if(last&&now-Date.parse(last.at)<AUTO_GUARD_MS){
     showReceipt({variant:'warn',icon:'i',heading:'Već evidentirano – novi zapis nije potreban',name:cardLabel(code),kind:last.kind,at:last.at,

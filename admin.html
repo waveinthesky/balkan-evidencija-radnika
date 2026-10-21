@@ -80,10 +80,18 @@ function humanMinutes(t){return t==null?'—':`${Math.floor(t/60)} h ${pad(Math.
 const defaultState=()=>({v:1,locations:[{id:'m1',name:'Market 1',active:true,schedules:[{id:uid(),from:'2020-01-01',open:'07:15',close:'21:00',days:[1,2,3,4,5,6],grace:0}]},{id:'m2',name:'Market 2',active:true,schedules:[{id:uid(),from:'2020-01-01',open:'07:15',close:'21:00',days:[1,2,3,4,5,6],grace:0}]}],employees:[],events:[],overrides:[],holidays:[],audit:[],admin:null,station:'m1',createdAt:new Date().toISOString()});
 let db=null,S=null,route='kiosk',unlocked=sessionStorage.getItem('balkan_admin')==='yes',mode='in',chosenDate=today(),chosenEmp=null,calY=new Date().getFullYear(),calM=new Date().getMonth()+1,calLoc='m1',adminLoc='m1',toast='',pendingPersist=Promise.resolve();
 function newStore(){return new Promise((resolve,reject)=>{if(!indexedDB)return reject(Error('IndexedDB nije dostupna'));let req=indexedDB.open('balkan-evidencija-v1',1);req.onupgradeneeded=()=>{req.result.createObjectStore('kv')};req.onsuccess=()=>resolve(req.result);req.onerror=()=>reject(req.error)})}
-function storeRead(){return new Promise((resolve,reject)=>{let tx=db.transaction('kv','readonly'),r=tx.objectStore('kv').get('main');r.onsuccess=()=>resolve(r.result||null);r.onerror=()=>reject(r.error)})}
-function storeWrite(value){return new Promise((resolve,reject)=>{let tx=db.transaction('kv','readwrite');tx.objectStore('kv').put(value,'main');tx.oncomplete=resolve;tx.onerror=()=>reject(tx.error)})}
-async function save(){let snap=structuredClone(S);pendingPersist=pendingPersist.catch(()=>{}).then(async()=>{if(db)await storeWrite(snap);else localStorage.setItem('BALKAN_DATABASE',JSON.stringify(snap))});try{await pendingPersist}catch(e){alert('GREŠKA: Podaci nisu mogli biti sačuvani! '+e.message);throw e}}
-async function init(){try{db=await newStore();S=await storeRead()}catch(e){db=null;try{S=JSON.parse(localStorage.getItem('BALKAN_DATABASE')||'null')}catch{S=null}}S||=defaultState();calLoc=S.station||'m1';adminLoc=calLoc;unlocked=!!(S.admin&&unlocked);if(!S.admin)route='setup';render()}
+function storeRead(key='main'){return new Promise((resolve,reject)=>{let tx=db.transaction('kv','readonly'),r=tx.objectStore('kv').get(key);r.onsuccess=()=>resolve(r.result||null);r.onerror=()=>reject(r.error)})}
+function storeWrite(value,key='main'){return new Promise((resolve,reject)=>{let tx=db.transaction('kv','readwrite');tx.objectStore('kv').put(value,key);tx.oncomplete=resolve;tx.onerror=()=>reject(tx.error)})}
+let savedBackupsSig='';
+async function save(){
+ // BRZINA (21.10.2026.): 7 dnevnih rezervnih kopija se više ne kopira i ne upisuje pri svakom čuvanju,
+ // nego u poseban ključ i samo kada nastane nova kopija. Podaci su isti, samo se čuvaju odvojeno.
+ const backups=S._localBackups,sig=(backups||[]).map(b=>b.at).join('|');
+ let snap;
+ if(db){const {_localBackups,...rest}=S;snap=structuredClone(rest)}else snap=structuredClone(S);
+ const bsnap=db&&sig!==savedBackupsSig?structuredClone(backups||[]):null;
+ pendingPersist=pendingPersist.catch(()=>{}).then(async()=>{if(db){if(bsnap){await storeWrite(bsnap,'backups');savedBackupsSig=sig}await storeWrite(snap)}else localStorage.setItem('BALKAN_DATABASE',JSON.stringify(snap))});try{await pendingPersist}catch(e){alert('GREŠKA: Podaci nisu mogli biti sačuvani! '+e.message);throw e}}
+async function init(){try{db=await newStore();S=await storeRead();if(S&&!(S._localBackups?.length)){const bk=await storeRead('backups');if(Array.isArray(bk)){S._localBackups=bk;savedBackupsSig=bk.map(b=>b.at).join('|')}}}catch(e){db=null;try{S=JSON.parse(localStorage.getItem('BALKAN_DATABASE')||'null')}catch{S=null}}S||=defaultState();calLoc=S.station||'m1';adminLoc=calLoc;unlocked=!!(S.admin&&unlocked);if(!S.admin)route='setup';render()}
 function audit(action,detail){S.audit.unshift({id:uid(),at:new Date().toISOString(),action,detail,by:'Administrator (lokalno)'});if(S.audit.length>5000)S.audit.length=5000}
 function statusText(code){return LEGEND[code]?.[1]||'Nepoznato'}
 function employeeAt(e,date){
@@ -294,6 +302,13 @@ $('modal').addEventListener('submit',e=>{
  else sessionStorage.setItem('balkan_admin_name',submitted);
 },true);
 
+// Kopija za poređenje sadrži samo podatke koji se sinhronizuju (bez rezervnih kopija).
+function syncClone(src){
+ const o={_sync:structuredClone(src._sync||{})};
+ for(const c of SYNC_NAMES)o[c]=structuredClone(src[c]||[]);
+ Object.defineProperty(o,'__evSig',{value:{ref:src.events,len:(src.events||[]).length},enumerable:false});
+ return o;
+}
 let persistedBaseline=null, syncBusy=false, syncWake=null, suppressDiff=false, syncLastError='';
 function ensureV2(){
  if(!S._sync)S._sync={url:'',token:'',deviceId:uid(),seeded:false,lastAt:null};
@@ -301,9 +316,14 @@ function ensureV2(){
  if(!Array.isArray(S._localBackups))S._localBackups=[];
  for(const key of SYNC_NAMES)if(!Array.isArray(S[key]))S[key]=[];
 }
-function diffRecords(prev,next){
+function diffRecords(prev,next,only){
  const ops=[];
- for(const col of SYNC_NAMES){
+ // Skeniranja se u programu nikad ne mijenjaju "u mjestu": ako je lista ista (isti niz i dužina)
+ // kao pri prethodnom čuvanju, nema promjena i preskače se skupo poređenje hiljada zapisa.
+ const ps=prev?.__evSig,ns=next===S?{ref:S.events,len:(S.events||[]).length}:next?.__evSig;
+ const sameEvents=!!(ps&&ns&&ps.ref===ns.ref&&ps.len===ns.len);
+ for(const col of (only||SYNC_NAMES)){
+   if(col==='events'&&sameEvents)continue;
    const old=new Map((prev?.[col]||[]).map(x=>[x.id,JSON.stringify(x)]));
    const now=new Map((next[col]||[]).map(x=>[x.id,JSON.stringify(x)]));
    for(const [id,value] of now)if(old.get(id)!==value)ops.push({id:uid(),collection:col,key:id,type:'set',value:JSON.parse(value)});
@@ -334,18 +354,19 @@ save=async function(){
      const describe=(v)=>v==null?'(nema)':JSON.stringify(v).slice(0,650);
      audit('Promjena / prije-poslije',`${op.collection} ${op.key} | PRIJE ${describe(before)} | POSLIJE ${describe(after)}`);
    }
-   S._pending.push(...diffRecords(persistedBaseline,S));
+   // Isti rezultat kao ponovno poređenje svega: promjene od gore + nove stavke istorije (audit).
+   S._pending.push(...changes.filter(op=>op.collection!=='audit'),...diffRecords(persistedBaseline,S,['audit']));
  }
  saveLocalSnapshot();
  await v1save();
- persistedBaseline=structuredClone(S);
+ persistedBaseline=syncClone(S);
  if(S._sync.url && S._sync.token)queueSync();
 };
 const v1init=init;
 init=async function(){
  await v1init();ensureV2();
  if(!S._localBackups.length){saveLocalSnapshot();await v1save();}
- persistedBaseline=structuredClone(S);
+ persistedBaseline=syncClone(S);
  render();
  window.addEventListener('online',()=>queueSync(300));
  document.addEventListener('visibilitychange',()=>{if(!document.hidden)queueSync(300)});
@@ -376,7 +397,7 @@ async function syncNow(){
  try{
    bootstrapOps();
    let sent=S._pending.slice();
-   await v1save();persistedBaseline=structuredClone(S);
+   await v1save();persistedBaseline=syncClone(S);
    const res=await fetch(S._sync.url+'/api/sync',{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+S._sync.token},body:JSON.stringify({deviceId:S._sync.deviceId,ops:sent}),cache:'no-store',signal:AbortSignal.timeout(12000)});
    if(!res.ok)throw Error('Server: HTTP '+res.status);
    const response=await res.json();
@@ -396,7 +417,7 @@ async function syncNow(){
    }
    next._pending=remaining;next._sync.lastAt=new Date().toISOString();
    S=next;
-   await v1save();persistedBaseline=structuredClone(S);
+   await v1save();persistedBaseline=syncClone(S);
    if(remaining.length)queueSync(1200);
    if(route!=='kiosk'&&route!=='setup')render();
  }catch(e){syncLastError=e.message; if(route==='postavke')render();}
@@ -495,7 +516,7 @@ $('modal').addEventListener('click',e=>{
    if(!backup||!confirm('Vratiti odabranu lokalnu kopiju? Sve novije lokalne promjene biće izgubljene.'))return;
    const oldSync=S._sync,oldBackups=S._localBackups;
    suppressDiff=true;S={...structuredClone(backup.data),_sync:oldSync,_localBackups:oldBackups,_pending:[]};
-   v1save().then(()=>{persistedBaseline=structuredClone(S);suppressDiff=false;closeModal();route='kiosk';unlocked=false;render();alert('Lokalna kopija vraćena. Ako koristiš zajednički server, podatke prije nove sinhronizacije treba provjeriti.');}).catch(err=>{suppressDiff=false;alert(err.message)});
+   v1save().then(()=>{persistedBaseline=syncClone(S);suppressDiff=false;closeModal();route='kiosk';unlocked=false;render();alert('Lokalna kopija vraćena. Ako koristiš zajednički server, podatke prije nove sinhronizacije treba provjeriti.');}).catch(err=>{suppressDiff=false;alert(err.message)});
  }
 });
 $('modal').addEventListener('submit',e=>{if(e.target.id==='restoreForm'){suppressDiff=true;setTimeout(()=>{suppressDiff=false},1000)}},true);
@@ -576,7 +597,7 @@ function manualLeaveDates(empId,year){
 function leaveCount(empId,year){
  let g=leaveGrant(empId,year),arr=S.leaveDecisions.filter(x=>x.empId===empId&&x.year===year&&x.status==='issued'),approved=[...new Set(arr.flatMap(x=>x.days||[]))].filter(date=>{const emp=S.employees.find(e=>e.id===empId);return emp&&employeeAt(emp,date)&&isWorking(assigned(emp,date),date)&&!holiday(assigned(emp,date),date,emp)?.paid&&!sickLeaveAt(emp,date)}),unlinked=manualLeaveDates(empId,year),reserved=[...new Set([...approved,...unlinked])];
  // Odobrava se po kalendarskoj godini na koju se pravo odnosi; budući dani nisu još iskorišćeni.
- let conflict=reserved.filter(date=>S.events.some(v=>v.empId===empId&&dateOfEvent(v.at)===date&&v.kind==='in')||S.overrides.some(o=>o.empId===empId&&o.date===date&&o.status==='BO'));
+ let conflict=reserved.filter(date=>(window.balkanHasArrival?window.balkanHasArrival(empId,date):S.events.some(v=>v.empId===empId&&dateOfEvent(v.at)===date&&v.kind==='in'))||S.overrides.some(o=>o.empId===empId&&o.date===date&&o.status==='BO'));
  let used=reserved.filter(d=>d<=today()&&!conflict.includes(d)).length,upcoming=reserved.filter(d=>d>today()).length;
  return{g,approved:approved.length,unlinked:unlinked.length,used,upcoming,conflicts:conflict,reserved:reserved.length,remaining:g?g.days-reserved.length:null};
 }
@@ -1370,6 +1391,7 @@ function latenessDetails(){
      delay=m;record=true;
      kind=m===0?'ok':m<=10?'warn':'bad';
      label=m===0?'Na vrijeme':m<=10?'Kasnio '+m+' min':'Kasnio '+m+' min';
+     const mis=window.balkanShiftHint?.(e,date,adminLoc);if(mis&&m>0)label+=' · '+mis;
     }
    }else if(o?.status==='P'){label='Ručno prisutan · bez sata prijave'}
    else if(attendanceSignal(e,adminLoc,date)){label='Bez prijave – provjeriti'}
@@ -1944,7 +1966,7 @@ function balkanCarryAudit(employee,year,asOf=today()){
   if(!/^\d{4}-\d\d-\d\d$/.test(date)||date.slice(0,4)!==String(y))return false;
   const loc=assigned(employee,date);
   if(!employeeAt(employee,date)||!loc||!isWorking(loc,date)||holiday(loc,date,employee)?.paid||sickLeaveAt(employee,date))return false;
-  if(S.events.some(v=>v.empId===employee.id&&v.kind==='in'&&dateOfEvent(v.at)===date))return false;
+  if(typeof window!=='undefined'&&window.balkanHasArrival?window.balkanHasArrival(employee.id,date):S.events.some(v=>v.empId===employee.id&&v.kind==='in'&&dateOfEvent(v.at)===date))return false;
   if(S.overrides.some(o=>o.empId===employee.id&&o.date===date&&o.status==='BO'))return false;
   return true;
  }).sort();
@@ -2060,6 +2082,84 @@ document.getElementById('app').addEventListener('click',async event=>{
  try{await save();render()}catch(err){alert('Godišnji fond nije potvrđeno sačuvan: '+err.message)}
 },true);
 
+// ===================== BRZINA: indeks skeniranja (21.10.2026.) =====================
+// Ranije je svaki upit za jednog radnika i jedan dan pretraživao SVA skeniranja i svaki put
+// ponovo računao datum (izvještaj = milioni operacija). Indeks se gradi jednom i automatski se
+// obnavlja kad se lista skeniranja promijeni (novi niz ili druga dužina). Rezultati su identični.
+(function(){
+ const dateCache=new Map();
+ const _dateOfEvent=dateOfEvent;
+ dateOfEvent=function(at){
+  let v=dateCache.get(at);
+  if(v===undefined){v=_dateOfEvent(at);if(dateCache.size>200000)dateCache.clear();dateCache.set(at,v)}
+  return v;
+ };
+ let idx={ref:null,len:-1};
+ function index(){
+  const a=S.events;
+  if(idx.ref===a&&idx.len===a.length)return idx;
+  const byDay=new Map(),byEmp=new Map(),inDay=new Set();
+  for(const v of a){
+   if(!v)continue;
+   const d=dateOfEvent(v.at),k=v.empId+'|'+v.locId+'|'+d;
+   (byDay.get(k)||byDay.set(k,[]).get(k)).push(v);
+   (byEmp.get(v.empId)||byEmp.set(v.empId,[]).get(v.empId)).push(v);
+   if(v.kind==='in')inDay.add(v.empId+'|'+d);
+  }
+  const cmp=(x,y)=>x.at.localeCompare(y.at);
+  for(const l of byDay.values())l.sort(cmp);
+  for(const l of byEmp.values())l.sort(cmp);
+  idx={ref:a,len:a.length,byDay,byEmp,inDay};
+  return idx;
+ }
+ const EMPTY=Object.freeze([]);
+ evs=function(empId,locId,date){const l=index().byDay.get(empId+'|'+locId+'|'+date);return l?l.slice():[]};
+ allEvents=function(empId){return index().byEmp.get(empId)||EMPTY};
+ // Da li je radnik tog dana imao dolazak (u bilo kojem objektu).
+ window.balkanHasArrival=function(empId,date){return index().inDay.has(empId+'|'+date)};
+})();
+// ===================== SMJENA PREMA DOLASKU (21.10.2026.) =====================
+// Radnik bez izričito postavljene smjene ("Automatski") u marketu sa dvije smjene dobija smjenu
+// kojoj je dolazak najbliži: dolazak 14:25 uz drugu smjenu od 14:30 = druga smjena, a ne
+// "kasnio 7 sati" u odnosu na otvaranje marketa. Izričito postavljena smjena se uvijek poštuje.
+(function(){
+ const _shiftInfo=shiftInfo;
+ window.balkanExplicitShift=function(e,date){
+  const dayMode=e.shiftByDate?.[date],selected=dayMode&&dayMode!=='inherit'?dayMode:e.defaultShift||'';
+  return selected||e.shiftCalendar?.[date]||'';
+ };
+ const firstArrival=(e,loc,date)=>{const l=evs(e.id,loc,date).filter(v=>v.kind==='in');return l[0]||null};
+ const near=(sc,arrMin)=>{
+  const f=minutes(sc.firstStart||sc.open),s=minutes(sc.secondStart);
+  return Math.abs(arrMin-s)<Math.abs(arrMin-f)?'second':'first';
+ };
+ shiftInfo=function(e,date,locId){
+  const base=_shiftInfo(e,date,locId);
+  if(window.balkanExplicitShift(e,date))return base;            // ručno podešeno – poštuje se
+  if(base.label!=='Automatski · objekat')return base;           // posebni/naslijeđeni termini ostaju
+  const loc=locId||assigned(e,date),sc=getSchedule(loc,date);
+  if(!sc?.secondStart)return base;                               // objekat ima jednu smjenu
+  const a=firstArrival(e,loc,date);if(!a)return base;
+  if(near(sc,minutes(clock(a.at)))==='second')return {start:sc.secondStart,end:sc.secondEnd||sc.close||'',label:'Druga smjena (prema dolasku)'};
+  return {start:sc.firstStart||sc.open,end:sc.firstEnd||'',label:'Prva smjena (prema dolasku)'};
+ };
+ // Upozorenje: izričito prva smjena, a dolazak odgovara drugoj (ili obrnuto) – vjerovatno pogrešna postavka.
+ window.balkanShiftMismatch=function(e,date,loc){
+  const sel=window.balkanExplicitShift(e,date);if(sel!=='first'&&sel!=='second')return '';
+  const sc=getSchedule(loc,date);if(!sc?.secondStart)return '';
+  const a=firstArrival(e,loc,date);if(!a)return '';
+  const n=near(sc,minutes(clock(a.at)));
+  return n!==sel?(n==='second'?'Dolazak odgovara DRUGOJ smjeni – provjeri smjenu radnika':'Dolazak odgovara PRVOJ smjeni – provjeri smjenu radnika'):'';
+ };
+ // Market bez upisane druge smjene, a radnik dolazi više od 4 sata poslije početka: vjerovatno druga smjena.
+ window.balkanShiftHint=function(e,date,loc){
+  const mis=window.balkanShiftMismatch(e,date,loc);if(mis)return mis;
+  if(window.balkanExplicitShift(e,date))return '';
+  const sc=getSchedule(loc,date),a=firstArrival(e,loc,date),start=shiftInfo(e,date,loc).start;
+  if(!sc||sc.secondStart||!a||!start)return '';
+  return minutes(clock(a.at))-minutes(start)>240?'Ako radi drugu smjenu: upiši drugu smjenu za ovaj market u Objekti':'';
+ };
+})();
 // ===================== KALENDAR v2 (19.10.2026.) =====================
 // Jedan klik na dan: N → P → GO → N (budući dani: GO ↔ automatski; neradni dani: P ↔ automatski).
 // Dani pod rješenjem o GO, bolovanjem ili praznikom se NE mijenjaju klikom: otvaraju se detalji.
@@ -3480,8 +3580,8 @@ window.BALKAN_V6={
  boot:async()=>{await init(); if(!S.admin)S.admin={username:'Firebase administrator'};unlocked=true;route='pregled';S._sync={url:'',token:'',deviceId:S._sync?.deviceId||uid(),seeded:true,lastAt:null};S._pending=[];render()},
  state:()=>S,
  collections:()=>SYNC_NAMES.slice(),
- setCloudRows:async(rows)=>{suppressDiff=true;try{for(let col of SYNC_NAMES)if(rows[col])S[col]=rows[col];S._sync.url='';S._sync.token='';S._sync.seeded=true;S._pending=[];S.admin={username:'Firebase administrator'};unlocked=true;if(route==='setup'||route==='kiosk')route='pregled';await v1save();persistedBaseline=structuredClone(S);render()}finally{suppressDiff=false}},
- patchSave:(hook)=>{const prev=save;save=async()=>{const before=structuredClone(persistedBaseline||S);await prev();await hook(before,structuredClone(S))}},
+ setCloudRows:async(rows)=>{suppressDiff=true;try{for(let col of SYNC_NAMES)if(rows[col])S[col]=rows[col];S._sync.url='';S._sync.token='';S._sync.seeded=true;S._pending=[];S.admin={username:'Firebase administrator'};unlocked=true;if(route==='setup'||route==='kiosk')route='pregled';await v1save();persistedBaseline=syncClone(S);render()}finally{suppressDiff=false}},
+ patchSave:(hook)=>{const prev=save;save=async()=>{const before=persistedBaseline||syncClone(S);await prev();await hook(before,persistedBaseline||syncClone(S))}},
  setSyncIndicator:(fn)=>{syncStatus=fn},
  getSettings:()=>settings,
  barcodeSvg:(code)=>makeCardBarcode(code),

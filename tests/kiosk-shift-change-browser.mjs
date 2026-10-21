@@ -37,6 +37,13 @@ await p.evaluate(()=>{const k='balkan_kiosk_confirmed_v1',h=JSON.parse(localStor
 await p.reload();await p.waitForTimeout(300);
 await scan('VEZA');await p.waitForFunction(()=>(globalThis.__w||[]).length>=1);
 assert.deepEqual(await written(),['VEZA:in'],'Sljedeći dan: DOLAZAK');
+// granični slučajevi automatskog prepoznavanja
+const withHistory=async(code,hoursAgo,kind)=>{await p.evaluate(([c,h,k])=>{localStorage.setItem('balkan_kiosk_confirmed_v1',JSON.stringify([{id:'x'+c,barcode:c,name:c,kind:k,at:new Date(Date.now()-h*3600000).toISOString()}]));localStorage.removeItem('balkan_kiosk_lastscan_v1');localStorage.removeItem('balkan_kiosk_outbox_v1');globalThis.__w=[]},[code,hoursAgo,kind]);
+ await p.reload();await p.waitForTimeout(250);await scan(code);await p.waitForFunction(()=>(globalThis.__w||[]).length>=1);return (await written())[0]};
+assert.equal(await withHistory('NOC',8,'in'),'NOC:out','Noćna smjena 22→06: ODLAZAK');
+assert.equal(await withHistory('DUG',12,'in'),'DUG:out','Duga smjena 12 h: ODLAZAK');
+assert.equal(await withHistory('ZAB',16.5,'in'),'ZAB:in','Zaboravljena odjava (14:25 → sutra 07:00): DOLAZAK');
+assert.equal(await withHistory('ZA2',24,'in'),'ZA2:in','Zaboravljena odjava, ista smjena sutra: DOLAZAK');
 assert.deepEqual(errors,[]);
 await b.close();
-console.log('PASS SMJENA 14:25: dugme ODLAZAK prve smjene ne blokira drugu smjenu; automatski dolazak/odlazak; dvostruko skeniranje u 10 min se ne upisuje');
+console.log('PASS SMJENA 14:25 + noćna/duga smjena/zaboravljena odjava: dugme ODLAZAK prve smjene ne blokira drugu smjenu; automatski dolazak/odlazak; dvostruko skeniranje u 10 min se ne upisuje');
